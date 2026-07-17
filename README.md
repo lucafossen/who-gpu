@@ -53,6 +53,11 @@ directly. Uninstall with `./uninstall.sh`.
 The report tool itself needs only `bash` and `ssh`, so it runs on all three.
 Native Windows (cmd/PowerShell) has no bash, so use WSL or Git Bash there.
 
+> **Help wanted:** the Linux CLI and desktop icon are tested in daily use. The
+> macOS `.command` and Windows `.cmd` launchers are best-effort and have not yet
+> been verified on real hardware. If you try one, please report back (or open a
+> PR) so this note can be updated.
+
 ## Setup
 
 Run the guided setup:

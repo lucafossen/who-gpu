@@ -1,0 +1,9 @@
+# Never commit real infrastructure host lists
+.who-gpu-hosts
+hosts.txt
+/hosts
+
+# Editor / OS cruft
+*.swp
+*~
+.DS_Store

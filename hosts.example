@@ -1,0 +1,12 @@
+# Example hosts file for who-gpu.
+#
+# Used when you run `who-gpu` WITHOUT -S (i.e. not reading ~/.ssh/config).
+# Copy this to ~/.who-gpu-hosts and edit, or pass it with:  who-gpu -f hosts.example
+#
+# One host per line. Blank lines and #-comments are ignored.
+# Each entry can be a plain hostname, user@host, or an alias from ~/.ssh/config.
+
+gpu-node-1
+gpu-node-2
+alice@gpu-node-3
+# gpu-node-4        # temporarily commented out - being reimaged

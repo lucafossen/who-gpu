@@ -40,11 +40,27 @@ The installer puts a `who-gpu` command on your `PATH` (`~/.local/bin`) and adds 
 double-clickable **GPU Fleet Report** desktop icon (Linux only). You can also skip the installer and
 just run `./who-gpu.sh` directly. Uninstall with `./uninstall.sh`.
 
+## Setup
+
+Run the guided setup:
+
+```bash
+who-gpu --setup
+```
+
+It scans your `~/.ssh/config`, shows every host with its current probe state, and
+lets you toggle each one on or off. It works both for first-time setup and for
+changing things later. Flipping a host **on** adds a `#probe` marker, flipping it
+**off** removes one. Your config is backed up (timestamped) before any change.
+
+If you just run `who-gpu` with no hosts tagged yet, it offers to launch this setup
+for you. You can also skip the wizard and tag hosts by hand (see below).
+
 ## Telling it which hosts to probe
 
 By default who-gpu reads your `~/.ssh/config` and probes every host tagged with
-a `#probe` comment, so `who-gpu` with no arguments only works once you've tagged
-them.
+a `#probe` comment, so `who-gpu` with no arguments works once your hosts are
+tagged (via `who-gpu --setup` or by hand).
 
 1. **`~/.ssh/config` `#probe` markers (default):** tag each host block you want
    probed with a `#probe` comment line. SSH ignores comments, so this is
@@ -55,7 +71,7 @@ them.
        User alice
        #probe
    ```
-   Then just run `who-gpu`.
+   Then just run `who-gpu`. (Or let `who-gpu --setup` add these for you.)
 
 2. **On the command line** (bash brace-expansion is your friend):
    ```bash
@@ -63,7 +79,7 @@ them.
    who-gpu alice@boxA boxB
    ```
 
-3. **A hosts file** - one host per line (`#` comments / blanks ignored). Pass it
+3. **A hosts file:** one host per line (`#` comments / blanks ignored). Pass it
    with `-f`, or use `--no-ssh-config` to fall back to `~/.who-gpu-hosts`. See
    [`hosts.example`](hosts.example).
    ```bash
@@ -77,6 +93,7 @@ By default who-gpu prints the compact summary and takes hosts from
 
 | Flag | Meaning |
 |------|---------|
+| `--setup` | Interactively scan SSH hosts and toggle `#probe` markers on/off |
 | `-F`, `--full` | Verbose breakdown instead of the compact summary |
 | `-s`, `--summary` | Compact one line per host (the default) |
 | `-S`, `--ssh-config` | Read hosts from `~/.ssh/config` `#probe` markers (the default) |

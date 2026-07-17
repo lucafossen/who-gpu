@@ -33,12 +33,25 @@ hogging the busy ones?" This answers it in one command.
 ```bash
 git clone https://github.com/lucafossen/who-gpu.git
 cd who-gpu
-./install.sh
+./install.sh           # installs the `who-gpu` command
+./install.sh --icon    # also adds a double-click desktop launcher
 ```
 
-The installer puts a `who-gpu` command on your `PATH` (`~/.local/bin`) and adds a
-double-clickable **GPU Fleet Report** desktop icon (Linux only). You can also skip the installer and
-just run `./who-gpu.sh` directly. Uninstall with `./uninstall.sh`.
+By default the installer puts a `who-gpu` command on your `PATH` (`~/.local/bin`)
+and nothing else. Pass `--icon` to also add a double-click launcher for your
+platform. You can also skip the installer entirely and run `./who-gpu.sh`
+directly. Uninstall with `./uninstall.sh`.
+
+### Platform support
+
+| Platform | CLI | Desktop launcher (`--icon`) |
+|----------|-----|-----------------------------|
+| Linux | yes | yes, a `.desktop` entry (GNOME/KDE/XFCE terminals) |
+| macOS | yes | yes, a double-click `who-gpu.command` that opens Terminal |
+| Windows | yes, via WSL or Git Bash | best-effort `who-gpu.cmd` on Git Bash |
+
+The report tool itself needs only `bash` and `ssh`, so it runs on all three.
+Native Windows (cmd/PowerShell) has no bash, so use WSL or Git Bash there.
 
 ## Setup
 

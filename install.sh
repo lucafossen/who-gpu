@@ -87,7 +87,7 @@ case "$OS" in
 [Desktop Entry]
 Version=1.0
 Type=Application
-Name=GPU Fleet Report
+Name=who-gpu
 Comment=SSH into the fleet and report which machines are in use and by whom
 Exec=$EXEC
 Icon=utilities-system-monitor

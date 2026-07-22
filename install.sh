@@ -35,6 +35,25 @@ detect_os() {
 }
 OS="$(detect_os)"
 
+# Resolve the user's real Desktop directory.
+# On Windows this must honor OneDrive folder redirection (the Desktop is often
+# %USERPROFILE%\OneDrive\Desktop, not ~/Desktop), so we ask Windows itself.
+desktop_dir() {
+  local d
+  case "$OS" in
+    windows)
+      d="$(powershell.exe -NoProfile -Command "[Environment]::GetFolderPath('Desktop')" 2>/dev/null | tr -d '\r')"
+      if [[ -n "$d" ]]; then
+        cygpath -u "$d" 2>/dev/null || echo "${d//\\//}"
+      else
+        echo "$HOME/Desktop"
+      fi ;;
+    *)
+      d="$( { command -v xdg-user-dir >/dev/null 2>&1 && xdg-user-dir DESKTOP; } 2>/dev/null || true )"
+      [[ -n "$d" ]] && echo "$d" || echo "$HOME/Desktop" ;;
+  esac
+}
+
 # 1) Put `who-gpu` on PATH (~/.local/bin), for every platform.
 mkdir -p "$HOME/.local/bin"
 CLI="$HOME/.local/bin/who-gpu"
@@ -62,9 +81,7 @@ if [[ "$WANT_ICON" != "1" ]]; then
   exit 0
 fi
 
-# Resolve the Desktop directory (xdg-user-dir on Linux, else ~/Desktop).
-DESKTOP_DIR="$( { command -v xdg-user-dir >/dev/null 2>&1 && xdg-user-dir DESKTOP; } 2>/dev/null || true )"
-[[ -n "$DESKTOP_DIR" ]] || DESKTOP_DIR="$HOME/Desktop"
+DESKTOP_DIR="$(desktop_dir)"
 
 case "$OS" in
   linux)
@@ -122,20 +139,22 @@ EOF
   windows)
     mkdir -p "$DESKTOP_DIR"
     CMD="$DESKTOP_DIR/who-gpu.cmd"
-    # Translate paths to Windows form when cygpath is available.
+    # cmd.exe must be able to *find* bash.exe, so that one path is given in
+    # Windows form (C:\...). The launch script is passed to bash as a POSIX
+    # /c/... path, which bash understands natively -- this sidesteps the
+    # backslash/quoting problems of handing bash a Windows path.
     if command -v cygpath >/dev/null 2>&1; then
-      WIN_LAUNCH="$(cygpath -w "$LAUNCH")"
       WIN_BASH="$(cygpath -w "$(command -v bash)")"
     else
-      WIN_LAUNCH="$LAUNCH"; WIN_BASH="bash"
+      # cygpath missing (unusual): fall back to Git for Windows' default path.
+      WIN_BASH='C:\Program Files\Git\bin\bash.exe'
     fi
-    cat > "$CMD" <<EOF
-@echo off
-"$WIN_BASH" "$WIN_LAUNCH"
-EOF
+    # Write with CRLF line endings -- cmd.exe batch files need them. Use a login
+    # shell (-l) so ssh and friends are on PATH.
+    printf '@echo off\r\n"%s" -lc "%s"\r\n' "$WIN_BASH" "'$LAUNCH'" > "$CMD"
     echo "* Desktop:  $CMD"
     echo
-    echo "Done. Double-click who-gpu.cmd on your Desktop (best-effort on Windows)."
+    echo "Done. Double-click who-gpu.cmd on your Desktop. Requires Git Bash."
     ;;
   *)
     echo "! Don't know how to make a desktop icon on this OS ($OS)."

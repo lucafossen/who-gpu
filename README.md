@@ -48,10 +48,12 @@ directly. Uninstall with `./uninstall.sh`.
 |----------|-----|-----------------------------|
 | Linux | yes | yes, a `.desktop` entry (GNOME/KDE/XFCE terminals) |
 | macOS | yes | yes, a double-click `who-gpu.command` that opens Terminal |
-| Windows | yes, via WSL or Git Bash | best-effort `who-gpu.cmd` on Git Bash |
+| Windows | yes, via Git Bash | a `who-gpu.cmd` on the Desktop that launches Git Bash |
 
 The report tool itself needs only `bash` and `ssh`, so it runs on all three.
-Native Windows (cmd/PowerShell) has no bash, so use WSL or Git Bash there.
+Native Windows (cmd/PowerShell) has no bash, so **run the installer from Git
+Bash** (or use WSL). On Windows the installer finds your real Desktop even when
+OneDrive has redirected it, and the `.cmd` it writes calls Git Bash directly.
 
 > **Help wanted:** the Linux CLI and desktop icon are tested in daily use. The
 > macOS `.command` and Windows `.cmd` launchers are best-effort and have not yet

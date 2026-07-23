@@ -36,11 +36,10 @@ cd who-gpu
 ./install.sh           # installs the `who-gpu` command
 ./install.sh --icon    # also adds a double-click desktop launcher
 ```
+Uninstall with `./uninstall.sh`.
 
-By default the installer puts a `who-gpu` command on your `PATH` (`~/.local/bin`)
-and nothing else. Pass `--icon` to also add a double-click launcher for your
-platform. You can also skip the installer entirely and run `./who-gpu.sh`
-directly. Uninstall with `./uninstall.sh`.
+You can also skip the installer entirely and run `./who-gpu.sh`
+directly.
 
 ### Platform support
 
@@ -52,8 +51,7 @@ directly. Uninstall with `./uninstall.sh`.
 
 The report tool itself needs only `bash` and `ssh`, so it runs on all three.
 Native Windows (cmd/PowerShell) has no bash, so **run the installer from Git
-Bash** (or use WSL). On Windows the installer finds your real Desktop even when
-OneDrive has redirected it, and the `.cmd` it writes calls Git Bash directly.
+Bash** (or use WSL).
 
 > **Help wanted:** the Linux CLI and desktop icon are tested in daily use. The
 > macOS `.command` and Windows `.cmd` launchers are best-effort and have not yet
@@ -62,29 +60,22 @@ OneDrive has redirected it, and the `.cmd` it writes calls Git Bash directly.
 
 ## Setup
 
-Run the guided setup:
+Run the guided setup (also runs on first-time launch):
 
 ```bash
 who-gpu --setup
 ```
 
 It scans your `~/.ssh/config`, shows every host with its current probe state, and
-lets you toggle each one on or off. It works both for first-time setup and for
-changing things later. Flipping a host **on** adds a `#probe` marker, flipping it
+lets you toggle each one on or off. Flipping a host **on** adds a `#probe` marker, flipping it
 **off** removes one. Your config is backed up (timestamped) before any change.
-
-If you just run `who-gpu` with no hosts tagged yet, it offers to launch this setup
-for you. You can also skip the wizard and tag hosts by hand (see below).
 
 ## Telling it which hosts to probe
 
 By default who-gpu reads your `~/.ssh/config` and probes every host tagged with
-a `#probe` comment, so `who-gpu` with no arguments works once your hosts are
-tagged (via `who-gpu --setup` or by hand).
+a `#probe` comment.
 
-1. **`~/.ssh/config` `#probe` markers (default):** tag each host block you want
-   probed with a `#probe` comment line. SSH ignores comments, so this is
-   invisible to ssh itself:
+1. **`~/.ssh/config` `#probe` markers (default):**
    ```sshconfig
    Host gpu-node-1
        HostName 10.0.0.1
@@ -93,7 +84,7 @@ tagged (via `who-gpu --setup` or by hand).
    ```
    Then just run `who-gpu`. (Or let `who-gpu --setup` add these for you.)
 
-2. **On the command line** (bash brace-expansion is your friend):
+2. **On the command line** (you can use bash brace-expansion):
    ```bash
    who-gpu gpu-node-{1..8}
    who-gpu alice@boxA boxB

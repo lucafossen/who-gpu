@@ -53,7 +53,7 @@ Native Windows (cmd/PowerShell) has no bash, so **run the installer from Git
 Bash** (or use WSL).
 
 > **Help wanted:** the Linux CLI and desktop icon are tested in daily use. The
-> macOS `.command` and Windows `.cmd` launchers are best-effort and have not yet
+> macOS `.command` and Windows `.cmd` versions are best-effort and have not yet
 > been verified on real hardware. If you try one, please report back (or open a
 > PR) so this note can be updated.
 

@@ -1,8 +1,8 @@
 # who-gpu
 
-A tiny, Bash tool that SSHes into a list of machines, runs
+A tiny Bash tool that SSHes into a list of machines, runs
 `nvidia-smi` (and a bit of `ps`/`who`), and tells you **which machines are in
-use and by which usernames**.
+use and by which users**.
 
 ```
 $ who-gpu
@@ -16,8 +16,7 @@ gpubox                     UNREACHABLE (channel 0: open failed: connect failed: 
 
 ## Why
 
-On a shared GPU fleet the recurring question is "which boxes are free, and who's
-hogging the busy ones?" This answers it in one command.
+On a shared GPU fleet the recurring question is "which machines are free, and who's using them?" This answers it in one command.
 
 ## Requirements
 

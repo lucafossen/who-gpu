@@ -4,6 +4,11 @@
 #   ./install.sh          install the `who-gpu` command only (default)
 #   ./install.sh --icon   also add a double-click desktop launcher
 #
+# Defaults for the desktop icon (asked interactively with --icon, or set here):
+#   --icon-mode web|terminal   what the icon opens (default: web dashboard)
+#   --interval SECS            dashboard refresh rate (default: 10)
+#   --no-update-check          don't check whether a newer version exists
+#
 # Works on Linux (.desktop), macOS (.command), and Windows/Git Bash (.cmd).
 # Idempotent. Re-run any time. Uninstall with ./uninstall.sh
 set -euo pipefail
@@ -13,11 +18,25 @@ SCRIPT="$DIR/who-gpu.sh"
 LAUNCH="$DIR/who-gpu-launch.sh"
 
 WANT_ICON=0
+ICON_MODE=""            # empty = ask (interactive) or default to web
+INTERVAL=""
+UPDATE_CHECK=""
+ASKED=0
+
 while [[ $# -gt 0 ]]; do
   case "$1" in
     --icon|--desktop) WANT_ICON=1; shift ;;
-    -h|--help) sed -n '2,8p' "$0"; exit 0 ;;
-    *) echo "unknown option: $1" >&2; sed -n '2,8p' "$0"; exit 1 ;;
+    --icon-mode)
+      case "${2:-}" in
+        web|terminal) ICON_MODE="$2" ;;
+        *) echo "--icon-mode must be 'web' or 'terminal'" >&2; exit 1 ;;
+      esac; shift 2 ;;
+    --interval)
+      [[ "${2:-}" =~ ^[0-9]+$ ]] || { echo "--interval needs a number of seconds" >&2; exit 1; }
+      INTERVAL="$2"; shift 2 ;;
+    --no-update-check) UPDATE_CHECK=0; shift ;;
+    -h|--help) sed -n '2,14p' "$0"; exit 0 ;;
+    *) echo "unknown option: $1" >&2; sed -n '2,14p' "$0"; exit 1 ;;
   esac
 done
 
@@ -73,7 +92,60 @@ case ":$PATH:" in
   *) echo "  (note: add ~/.local/bin to your PATH to use the 'who-gpu' command)" ;;
 esac
 
-# 2) The desktop launcher is opt-in via --icon.
+# 2) Preferences. Written to one config file that every platform's launcher
+#    reads, so the same settings work for .desktop, .command and .cmd alike.
+CONFIG_FILE="${XDG_CONFIG_HOME:-$HOME/.config}/who-gpu/config"
+
+# Carry over existing choices so re-running the installer never silently resets
+# preferences the user already made.
+if [[ -r "$CONFIG_FILE" ]]; then
+  while IFS='=' read -r k v; do
+    case "$k" in
+      ICON_MODE)    [[ -z "$ICON_MODE"    ]] && ICON_MODE="$v" ;;
+      INTERVAL)     [[ -z "$INTERVAL"     ]] && INTERVAL="$v" ;;
+      UPDATE_CHECK) [[ -z "$UPDATE_CHECK" ]] && UPDATE_CHECK="$v" ;;
+    esac
+  done < <(grep -E '^[A-Z_]+=' "$CONFIG_FILE" 2>/dev/null || true)
+fi
+
+# Ask, but only when there's a human present and something to ask about.
+if [[ "$WANT_ICON" == "1" && -t 0 && -t 1 && -z "$ICON_MODE" ]]; then
+  ASKED=1
+  echo
+  echo "What should the desktop icon open?"
+  echo "  1) the web dashboard in your browser  (default)"
+  echo "  2) the plain text report in a terminal"
+  printf "> "
+  IFS= read -r reply </dev/tty || reply=""
+  case "$reply" in
+    2) ICON_MODE="terminal" ;;
+    *) ICON_MODE="web" ;;
+  esac
+  if [[ "$ICON_MODE" == "web" ]]; then
+    printf "How often should the dashboard refresh, in seconds? [10] "
+    IFS= read -r reply </dev/tty || reply=""
+    [[ "$reply" =~ ^[0-9]+$ ]] && INTERVAL="$reply"
+  fi
+fi
+
+ICON_MODE="${ICON_MODE:-web}"
+INTERVAL="${INTERVAL:-10}"
+UPDATE_CHECK="${UPDATE_CHECK:-1}"
+
+mkdir -p "$(dirname "$CONFIG_FILE")"
+cat > "$CONFIG_FILE" <<EOF
+# who-gpu preferences. Edit freely, or re-run ./install.sh to change them.
+# ICON_MODE     web | terminal   what the desktop icon opens
+# INTERVAL      seconds          how often --web re-probes the fleet
+# UPDATE_CHECK  1 | 0            check whether a newer version exists
+ICON_MODE=$ICON_MODE
+INTERVAL=$INTERVAL
+UPDATE_CHECK=$UPDATE_CHECK
+EOF
+echo "* Config:   $CONFIG_FILE (icon opens: $ICON_MODE, refresh: ${INTERVAL}s)"
+[[ "$ASKED" == "1" ]] && echo
+
+# 3) The desktop launcher is opt-in via --icon.
 if [[ "$WANT_ICON" != "1" ]]; then
   echo
   echo "Installed the CLI. Run:  who-gpu"

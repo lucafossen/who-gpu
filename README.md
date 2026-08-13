@@ -138,18 +138,12 @@ flatpak-confined browsers can't read dot-directories under `$HOME`.
 
 ### Connection reuse
 
-Refreshing every 10s would otherwise mean a fresh SSH login per host several
-times a minute — enough to trip connection rate limits, flood `auth.log` and
-hammer a shared LDAP/Kerberos backend. who-gpu multiplexes instead
-(`ControlMaster`/`ControlPersist`): one login per host when `--web` starts,
-reused by every later probe, hung up on Ctrl-C. Sockets live in
-`/tmp/who-gpu-mux-$UID/`, mode `0700`.
+`--web` reuses one SSH connection per host (`ControlMaster`) instead of logging
+in on every refresh. Where that isn't supported — **notably Git Bash** — it falls
+back to a login per refresh and slows the refresh to 60s, unless you pinned an
+interval (`WHO_GPU_INTERVAL`, `--interval`, or `INTERVAL=` in your config).
 
-It verifies this actually worked rather than assuming. If it didn't — **Git Bash
-does not support multiplexing** — reuse is switched off and the refresh slows to
-60s to go easy on the fleet. That changes only the *default*: an interval you
-chose (`WHO_GPU_INTERVAL`, `--interval`, or `INTERVAL=` in your config) is used
-exactly as given. `WHO_GPU_NO_MUX=1` disables reuse outright.
+`WHO_GPU_NO_MUX=1` disables reuse.
 
 ## Telling it which hosts to probe
 

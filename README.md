@@ -85,6 +85,29 @@ dashboard. It never updates itself. Turn the check off with
 If you downloaded a zip instead of cloning, `--update` will say so and tell you
 how to switch to a clone.
 
+### Already have who-gpu from before v1.1?
+
+`--update` **did not exist before v1.1**, so it cannot update you to the version
+that has it — `who-gpu --update` will just answer `unknown option`. Neither did
+the "new version available" notice, so an older install will never tell you it
+is behind. The first upgrade has to be done by hand, once:
+
+```bash
+cd /path/to/who-gpu     # wherever you cloned it
+git pull
+./install.sh            # add --icon if you had a desktop icon
+```
+
+After that `who-gpu --update` handles everything, forever.
+
+Strictly speaking `git pull` alone is enough to get the new code — your
+`who-gpu` command and desktop icon both point into the clone. Re-running
+`./install.sh` additionally puts `~/.local/bin` on your `PATH` (which matters on
+Windows) and writes the preferences file.
+
+Note that **your desktop icon will start opening the web dashboard** after this,
+because that is the new default.
+
 ### Platform support
 
 | Platform | CLI | Web GUI (`--web`) | Desktop launcher (`--icon`) |

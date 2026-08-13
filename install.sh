@@ -6,7 +6,8 @@
 #
 # Defaults for the desktop icon (asked interactively with --icon, or set here):
 #   --icon-mode web|terminal   what the icon opens (default: web dashboard)
-#   --interval SECS            dashboard refresh rate (default: 10)
+#   --interval SECS            pin the dashboard refresh rate (default: auto,
+#                              10s, or 60s when SSH connections can't be reused)
 #   --no-update-check          don't check whether a newer version exists
 #   --no-path                  don't touch your shell profile, even if
 #                              ~/.local/bin is missing from PATH
@@ -23,6 +24,7 @@ WANT_ICON=0
 WANT_PATH=1             # fix PATH if ~/.local/bin is missing from it
 ICON_MODE=""            # empty = ask (interactive) or default to web
 INTERVAL=""
+INTERVAL_SET=0          # 1 = a human picked a number, so who-gpu must not adapt it
 UPDATE_CHECK=""
 ASKED=0
 
@@ -36,11 +38,11 @@ while [[ $# -gt 0 ]]; do
       esac; shift 2 ;;
     --interval)
       [[ "${2:-}" =~ ^[0-9]+$ ]] || { echo "--interval needs a number of seconds" >&2; exit 1; }
-      INTERVAL="$2"; shift 2 ;;
+      INTERVAL="$2"; INTERVAL_SET=1; shift 2 ;;
     --no-update-check) UPDATE_CHECK=0; shift ;;
     --no-path) WANT_PATH=0; shift ;;
-    -h|--help) sed -n '2,15p' "$0"; exit 0 ;;
-    *) echo "unknown option: $1" >&2; sed -n '2,15p' "$0"; exit 1 ;;
+    -h|--help) sed -n '2,16p' "$0"; exit 0 ;;
+    *) echo "unknown option: $1" >&2; sed -n '2,16p' "$0"; exit 1 ;;
   esac
 done
 
@@ -151,7 +153,7 @@ if [[ -r "$CONFIG_FILE" ]]; then
   while IFS='=' read -r k v; do
     case "$k" in
       ICON_MODE)    [[ -z "$ICON_MODE"    ]] && ICON_MODE="$v" ;;
-      INTERVAL)     [[ -z "$INTERVAL"     ]] && INTERVAL="$v" ;;
+      INTERVAL)     [[ -z "$INTERVAL"     ]] && { INTERVAL="$v"; INTERVAL_SET=1; } ;;
       UPDATE_CHECK) [[ -z "$UPDATE_CHECK" ]] && UPDATE_CHECK="$v" ;;
     esac
   done < <(grep -E '^[A-Z_]+=' "$CONFIG_FILE" 2>/dev/null || true)
@@ -171,27 +173,40 @@ if [[ "$WANT_ICON" == "1" && -t 0 && -t 1 && -z "$ICON_MODE" ]]; then
     *) ICON_MODE="web" ;;
   esac
   if [[ "$ICON_MODE" == "web" ]]; then
-    printf "How often should the dashboard refresh, in seconds? [10] "
+    printf "How often should the dashboard refresh, in seconds? [auto] "
     IFS= read -r reply </dev/tty || reply=""
-    [[ "$reply" =~ ^[0-9]+$ ]] && INTERVAL="$reply"
+    [[ "$reply" =~ ^[0-9]+$ ]] && { INTERVAL="$reply"; INTERVAL_SET=1; }
   fi
 fi
 
 ICON_MODE="${ICON_MODE:-web}"
-INTERVAL="${INTERVAL:-10}"
 UPDATE_CHECK="${UPDATE_CHECK:-1}"
+
+if [[ "$INTERVAL_SET" == "1" ]]; then
+  INTERVAL_LINE="INTERVAL=$INTERVAL"
+  INTERVAL_DESC="refresh: ${INTERVAL}s"
+else
+  # Commented out on purpose: an unset interval lets who-gpu use 10s normally
+  # and fall back to 60s when SSH connections cannot be reused.
+  INTERVAL_LINE="# INTERVAL=10"
+  INTERVAL_DESC="refresh: auto"
+fi
 
 mkdir -p "$(dirname "$CONFIG_FILE")"
 cat > "$CONFIG_FILE" <<EOF
 # who-gpu preferences. Edit freely, or re-run ./install.sh to change them.
 # ICON_MODE     web | terminal   what the desktop icon opens
-# INTERVAL      seconds          how often --web re-probes the fleet
+# INTERVAL      seconds          how often --web re-probes the fleet. Leave it
+#                                commented out to let who-gpu choose: 10s
+#                                normally, 60s if SSH connections cannot be
+#                                reused (Git Bash), which avoids hammering the
+#                                fleet with repeated logins.
 # UPDATE_CHECK  1 | 0            check whether a newer version exists
 ICON_MODE=$ICON_MODE
-INTERVAL=$INTERVAL
+$INTERVAL_LINE
 UPDATE_CHECK=$UPDATE_CHECK
 EOF
-echo "* Config:   $CONFIG_FILE (icon opens: $ICON_MODE, refresh: ${INTERVAL}s)"
+echo "* Config:   $CONFIG_FILE (icon opens: $ICON_MODE, $INTERVAL_DESC)"
 [[ "$ASKED" == "1" ]] && echo
 
 # 3) The desktop launcher is opt-in via --icon.

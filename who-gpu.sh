@@ -58,7 +58,9 @@ MODE_FLAGS=""           # which output mode flags were given (to reject combinat
 # browsers (Ubuntu's default Chromium/Firefox) cannot read dotfile directories
 # under $HOME, so a tidy ~/.cache/who-gpu would silently fail to open for them.
 WEB_OUT="${WHO_GPU_OUT:-$HOME/who-gpu-web}"
-WEB_INTERVAL="${WHO_GPU_INTERVAL:-10}"   # seconds between probe cycles
+WEB_INTERVAL=10                # seconds between probe cycles
+WEB_INTERVAL_NO_MUX=60         # gentler default when connections can't be reused
+INTERVAL_PINNED=0              # 1 = the user chose a value; never override it
 
 # SSH connection reuse (--web only). Without this, every refresh cycle would be
 # a fresh login on every host: a new TCP handshake, key exchange and PAM/LDAP
@@ -96,7 +98,25 @@ load_config() {
   done < <(grep -E '^[A-Z_]+=' "$CONFIG_FILE" 2>/dev/null)
 }
 load_config
-[[ -n "$CFG_INTERVAL" ]] && WEB_INTERVAL="${WHO_GPU_INTERVAL:-$CFG_INTERVAL}"
+
+# Precedence: environment, then config, then the built-in default. Either of the
+# first two counts as the user having picked a number, which the automatic
+# backoff below must respect.
+if [[ -n "${WHO_GPU_INTERVAL:-}" ]]; then
+  WEB_INTERVAL="$WHO_GPU_INTERVAL"; INTERVAL_PINNED=1
+elif [[ -n "$CFG_INTERVAL" ]]; then
+  WEB_INTERVAL="$CFG_INTERVAL";     INTERVAL_PINNED=1
+fi
+
+# Without connection reuse every cycle is a fresh login on every host, so a
+# 10s default becomes hostile to the fleet. Back off to something gentle --
+# but only when nobody asked for a specific interval, and never downwards.
+relax_interval_without_mux() {
+  [[ "$INTERVAL_PINNED" == "1" ]] && return 1
+  [[ "$WEB_INTERVAL" -ge "$WEB_INTERVAL_NO_MUX" ]] && return 1
+  WEB_INTERVAL="$WEB_INTERVAL_NO_MUX"
+  return 0
+}
 
 usage() { sed -n '2,38p' "$0"; exit "${1:-0}"; }
 
@@ -1233,12 +1253,17 @@ run_web() {
   trap 'close_ssh_mux; rm -rf "$WEB_TMP"; printf "\nwho-gpu: stopped. Dashboard left at %s\n" "$WEB_OUT/fleet.html"; exit 0' INT TERM HUP
 
   write_shell_html
-  echo "who-gpu: probing ${#hosts[@]} host(s) every ${WEB_INTERVAL}s (up to $PARALLEL at once)"
+  echo "who-gpu: probing ${#hosts[@]} host(s) (up to $PARALLEL at once)"
 
+  # Announced only after we know whether reuse worked, since that decides the
+  # refresh rate. Saying "every 10s" and then changing it would be a lie.
   no_reuse_note() {
-    echo "who-gpu: NOTE: this ssh will not reuse connections, so every cycle opens" >&2
-    echo "         a fresh login on each host. On a rate-limited or LDAP-backed" >&2
-    echo "         fleet, use a longer interval:  WHO_GPU_INTERVAL=60 who-gpu --web" >&2
+    echo "who-gpu: this ssh will not reuse connections, so every refresh is a" >&2
+    echo "         fresh login on each host." >&2
+    if relax_interval_without_mux; then
+      echo "         Slowing the refresh rate to go easy on the fleet." >&2
+      echo "         Override with WHO_GPU_INTERVAL if you want it faster." >&2
+    fi
   }
 
   setup_ssh_mux || no_reuse_note
@@ -1254,9 +1279,10 @@ run_web() {
     else
       disable_ssh_mux
       no_reuse_note
-      write_data_js
+      write_data_js      # re-probe, and re-stamp the data with the new interval
     fi
   fi
+  echo "who-gpu: refreshing every ${WEB_INTERVAL}s"
 
   if open_browser "$WEB_OUT/fleet.html"; then
     echo "who-gpu: opened $WEB_OUT/fleet.html"

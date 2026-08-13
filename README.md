@@ -14,8 +14,8 @@ private_server             4/4 GPUs busy   gpu:  bob2 alice5   logged in:  bob2 
 gpubox                     UNREACHABLE (channel 0: open failed: connect failed: No route to host)
 ```
 
-Prefer a browser? `who-gpu --web` opens the same information as a live
-dashboard that keeps itself up to date. See [Web GUI](#web-gui).
+Prefer a browser? `who-gpu --web` shows the same thing as a live
+[dashboard](#web-gui).
 
 ## Why
 
@@ -40,73 +40,19 @@ cd who-gpu
 ```
 Uninstall with `./uninstall.sh` (add `--purge` to also drop your preferences).
 
-You can also skip the installer entirely and run `./who-gpu.sh`
-directly.
+You can also skip the installer entirely and run `./who-gpu.sh` directly.
 
-**The desktop icon opens the web dashboard.** With `--icon` the installer asks
-what you'd prefer and how often it should refresh; answer with flags instead to
-skip the questions:
+The desktop icon opens the web dashboard. `--icon` asks what you want and how
+often it refreshes; flags skip the questions:
 
 ```bash
-./install.sh --icon                          # asks, defaults to the dashboard
-./install.sh --icon --icon-mode terminal     # old-style text report instead
-./install.sh --icon --interval 30            # dashboard, refreshing every 30s
-./install.sh --no-update-check               # never check for new versions
+./install.sh --icon --icon-mode terminal   # text report instead
+./install.sh --icon --interval 30          # dashboard, pinned to 30s
+./install.sh --no-update-check             # never check for new versions
 ```
 
-Answers are written to `~/.config/who-gpu/config`, which is plain text and safe
-to edit by hand. Re-running the installer keeps your existing choices unless you
-override them.
-
-## Updating
-
-```bash
-who-gpu --update
-```
-
-That's it, on every platform, **including Windows** — you never re-run the
-installer by hand. The installer **links** into your clone rather than copying
-files out of it, so one update refreshes the `who-gpu` command and the desktop
-icon together. If the installer itself changed, `--update` re-runs it for you,
-keeping your desktop icon if you had one.
-
-On Windows this works because the Desktop `.cmd` points at an absolute path
-inside your clone, so updating the clone updates what the icon runs. The
-installer also puts `~/.local/bin` on your `PATH` (Git Bash omits it by
-default), so `who-gpu --update` is actually runnable — open Git Bash and type
-it. That edit **appends** one line to your existing shell profile and backs the
-file up first; `./install.sh --no-path` skips it.
-
-`who-gpu --version` tells you what you're on. who-gpu checks for new versions at
-most once a day and simply mentions it — in the terminal, and as a badge in the
-dashboard. It never updates itself. Turn the check off with
-`UPDATE_CHECK=0` in your config, or `./install.sh --no-update-check`.
-
-If you downloaded a zip instead of cloning, `--update` will say so and tell you
-how to switch to a clone.
-
-### Already have who-gpu from before v1.1?
-
-`--update` **did not exist before v1.1**, so it cannot update you to the version
-that has it — `who-gpu --update` will just answer `unknown option`. Neither did
-the "new version available" notice, so an older install will never tell you it
-is behind. The first upgrade has to be done by hand, once:
-
-```bash
-cd /path/to/who-gpu     # wherever you cloned it
-git pull
-./install.sh            # add --icon if you had a desktop icon
-```
-
-After that `who-gpu --update` handles everything, forever.
-
-Strictly speaking `git pull` alone is enough to get the new code — your
-`who-gpu` command and desktop icon both point into the clone. Re-running
-`./install.sh` additionally puts `~/.local/bin` on your `PATH` (which matters on
-Windows) and writes the preferences file.
-
-Note that **your desktop icon will start opening the web dashboard** after this,
-because that is the new default.
+Answers go to `~/.config/who-gpu/config` — plain text, safe to edit. Re-running
+the installer keeps your choices.
 
 ### Platform support
 
@@ -116,17 +62,47 @@ because that is the new default.
 | macOS | yes | yes | yes, a double-click `who-gpu.command` that opens Terminal |
 | Windows | yes, via Git Bash | yes | a `who-gpu.cmd` on the Desktop that launches Git Bash |
 
-The web GUI works everywhere the CLI does, because it adds no dependencies —
-it is still just `bash` and `ssh` (see [Web GUI](#web-gui)).
-
-The report tool itself needs only `bash` and `ssh`, so it runs on all three.
-Native Windows (cmd/PowerShell) has no bash, so **run the installer from Git
-Bash** (or use WSL).
+Everything needs only `bash` and `ssh` — the web GUI adds no dependencies, so it
+runs wherever the CLI does. Native Windows (cmd/PowerShell) has no bash, so
+**run the installer from Git Bash** (or use WSL).
 
 > **Help wanted:** the Linux CLI and desktop icon are tested in daily use. The
 > macOS `.command` and Windows `.cmd` versions are best-effort and have not yet
 > been verified on real hardware. If you try one, please report back (or open a
 > PR) so this note can be updated.
+
+## Updating
+
+```bash
+who-gpu --update
+```
+
+Every platform, Windows included, and you never re-run the installer by hand:
+the install links into your clone, so one update refreshes the command and the
+desktop icon together. If `install.sh` itself changed, `--update` re-runs it.
+`who-gpu --version` shows what you're on; a zip download is told to clone
+instead.
+
+The installer also puts `~/.local/bin` on your `PATH`, which Git Bash omits, by
+appending one line to your shell profile after backing it up (`--no-path`
+skips it).
+
+New versions are mentioned once a day, in the terminal and as a dashboard badge.
+who-gpu never updates itself; `UPDATE_CHECK=0` silences it.
+
+### Upgrading from before v1.1
+
+`--update` didn't exist then, so it can't deliver itself — you'll just get
+`unknown option`, and old installs never report being behind. Once, by hand:
+
+```bash
+cd /path/to/who-gpu
+git pull
+./install.sh
+```
+
+After that `--update` handles everything. Your desktop icon will start opening
+the web dashboard, which is the new default.
 
 ## Setup
 
@@ -146,55 +122,34 @@ lets you toggle each one on or off. Flipping a host **on** adds a `#probe` marke
 who-gpu --web
 ```
 
-That's the whole thing. It probes your fleet, opens a dashboard in your browser,
-and keeps it up to date until you press Ctrl-C. Machines are grouped into
-**Available**, **In use** and **Unreachable**, so the question "what's free right
-now?" is answered at a glance. Click any machine for the full breakdown.
+Probes the fleet, opens a dashboard in your browser, and keeps it current until
+Ctrl-C. Machines are grouped **Available** / **In use** / **Unreachable**; click
+one for the full breakdown. All the usual flags still work
+(`who-gpu --web -f myhosts.txt`).
 
-All the usual flags still work — `who-gpu --web -f myhosts.txt`,
-`who-gpu --web gpu-node-{1..8}`, and so on.
+No server, no dependencies: the page is a file on disk that the probe loop
+rewrites, which is why it works everywhere the CLI does. The page can't trigger
+a probe itself, so it always shows how old its data is and flags it loudly if
+the loop stops.
 
-**No new dependencies.** There is no web server and nothing to install: the page
-is a plain file on disk that the probe loop rewrites, and it pulls in fresh data
-by loading that file. This is why the web GUI works on every platform the CLI
-does, including Git Bash on Windows.
+Files live in `~/who-gpu-web/` and stay there after you quit, so you can reopen
+the last probe (clearly marked stale). Not `~/.cache`, because snap- and
+flatpak-confined browsers can't read dot-directories under `$HOME`.
 
-A consequence worth knowing: the page can show you the newest data instantly,
-but it **cannot make the loop go probe right now** — that would require a
-server. In practice this doesn't bite, because the loop re-probes every 10
-seconds on its own. The page always displays how old its data is ("updated 4s
-ago"), and says so loudly if the loop stops, so old numbers never masquerade as
-current ones.
+### Connection reuse
 
-Files are written to `~/who-gpu-web/`. They stay there after you stop, so you
-can reopen the dashboard any time to see the last probe — clearly marked stale.
+Refreshing every 10s would otherwise mean a fresh SSH login per host several
+times a minute — enough to trip connection rate limits, flood `auth.log` and
+hammer a shared LDAP/Kerberos backend. who-gpu multiplexes instead
+(`ControlMaster`/`ControlPersist`): one login per host when `--web` starts,
+reused by every later probe, hung up on Ctrl-C. Sockets live in
+`/tmp/who-gpu-mux-$UID/`, mode `0700`.
 
-### It does not re-login every cycle
-
-Refreshing every 10 seconds could mean a fresh SSH login on every host, several
-times a minute, forever — enough to trip connection rate limits, flood
-`auth.log`, and hammer a shared LDAP/Kerberos backend. who-gpu avoids this by
-using OpenSSH **connection multiplexing** (`ControlMaster`/`ControlPersist`):
-
-- each host is logged into **once**, when `--web` starts
-- every later probe reuses that connection — no TCP handshake, no key exchange,
-  no PAM/auth round trip
-- connections are hung up when you press Ctrl-C
-
-On startup you'll see `reusing one SSH connection per host (no repeat logins)`
-confirming it's active. who-gpu doesn't take this on trust — it checks that a
-shared connection really was opened, and if not, it switches reuse off, says so,
-and re-probes normally. **Git Bash on Windows is reported not to support
-multiplexing**, so expect the fallback there; nothing breaks, but each refresh
-is a fresh login, so on a rate-limited or LDAP-backed fleet set a gentler
-`WHO_GPU_INTERVAL=60`. Disable reuse outright with `WHO_GPU_NO_MUX=1`.
-
-Control sockets live in `/tmp/who-gpu-mux-$UID/`, created `0700` and refused if
-it already exists owned by somebody else.
-
-> **Why not `~/.cache`?** Snap- and flatpak-confined browsers (Ubuntu's default
-> Chromium and Firefox) cannot read dot-directories under your home directory,
-> so a tidier location would silently fail to open for many people.
+It verifies this actually worked rather than assuming. If it didn't — **Git Bash
+does not support multiplexing** — reuse is switched off and the refresh slows to
+60s to go easy on the fleet. That changes only the *default*: an interval you
+chose (`WHO_GPU_INTERVAL`, `--interval`, or `INTERVAL=` in your config) is used
+exactly as given. `WHO_GPU_NO_MUX=1` disables reuse outright.
 
 ## Telling it which hosts to probe
 
@@ -251,11 +206,11 @@ of them can be given at a time.
 Environment overrides: `WHO_GPU_HOSTS` (fallback hosts file path),
 `WHO_GPU_SSH_CONFIG` (ssh config path), `WHO_GPU_OUT` (where `--web` writes,
 default `~/who-gpu-web`), `WHO_GPU_INTERVAL` (seconds between `--web` probe
-cycles, default 10), `WHO_GPU_NO_MUX` (set to `1` to disable `--web` SSH
-connection reuse).
+cycles; unset means 10, or 60 when SSH connections can't be reused),
+`WHO_GPU_NO_MUX` (set to `1` to disable `--web` SSH connection reuse).
 
-There is also an undocumented-by-design `--json`, which dumps the same fleet
-data as a JSON document for scripting. It's what `--web` is built on.
+`--json` dumps the same fleet data as JSON for scripting; it's what `--web` is
+built on.
 
 ## What it reports
 

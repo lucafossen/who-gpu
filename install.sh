@@ -8,6 +8,8 @@
 #   --icon-mode web|terminal   what the icon opens (default: web dashboard)
 #   --interval SECS            dashboard refresh rate (default: 10)
 #   --no-update-check          don't check whether a newer version exists
+#   --no-path                  don't touch your shell profile, even if
+#                              ~/.local/bin is missing from PATH
 #
 # Works on Linux (.desktop), macOS (.command), and Windows/Git Bash (.cmd).
 # Idempotent. Re-run any time. Uninstall with ./uninstall.sh
@@ -18,6 +20,7 @@ SCRIPT="$DIR/who-gpu.sh"
 LAUNCH="$DIR/who-gpu-launch.sh"
 
 WANT_ICON=0
+WANT_PATH=1             # fix PATH if ~/.local/bin is missing from it
 ICON_MODE=""            # empty = ask (interactive) or default to web
 INTERVAL=""
 UPDATE_CHECK=""
@@ -35,8 +38,9 @@ while [[ $# -gt 0 ]]; do
       [[ "${2:-}" =~ ^[0-9]+$ ]] || { echo "--interval needs a number of seconds" >&2; exit 1; }
       INTERVAL="$2"; shift 2 ;;
     --no-update-check) UPDATE_CHECK=0; shift ;;
-    -h|--help) sed -n '2,14p' "$0"; exit 0 ;;
-    *) echo "unknown option: $1" >&2; sed -n '2,14p' "$0"; exit 1 ;;
+    --no-path) WANT_PATH=0; shift ;;
+    -h|--help) sed -n '2,15p' "$0"; exit 0 ;;
+    *) echo "unknown option: $1" >&2; sed -n '2,15p' "$0"; exit 1 ;;
   esac
 done
 
@@ -87,9 +91,54 @@ else
   ln -sf "$SCRIPT" "$CLI"
 fi
 echo "* CLI:      $CLI -> $SCRIPT"
+
+# Put ~/.local/bin on PATH if it isn't already. This matters most on Windows,
+# where Git Bash does not include it by default, so `who-gpu --update` would not
+# be a runnable command at all.
+#
+# Strictly additive: we APPEND one line to an existing profile (never rewrite
+# one), and the line itself keeps the old value -- PATH="$HOME/.local/bin:$PATH"
+# -- so nothing the user had is lost. A timestamped backup is taken first, the
+# same way --setup backs up ~/.ssh/config.
+add_local_bin_to_path() {
+  local f target line marker backup
+  marker='# added by who-gpu install.sh'
+  line='export PATH="$HOME/.local/bin:$PATH"'
+
+  # Bash reads only the FIRST of these that exists. Creating ~/.bash_profile
+  # when the user already has ~/.profile would silently stop ~/.profile from
+  # being read at all, so always extend the file bash is actually using.
+  target=""
+  for f in "$HOME/.bash_profile" "$HOME/.bash_login" "$HOME/.profile"; do
+    [[ -f "$f" ]] && { target="$f"; break; }
+  done
+  [[ -n "$target" ]] || target="$HOME/.bash_profile"
+
+  if [[ -f "$target" ]] && grep -qF '.local/bin' "$target"; then
+    echo "  (~/.local/bin is already handled in ${target/#$HOME/\~}; left as-is)"
+    echo "  (open a new terminal for the 'who-gpu' command to work)"
+    return 0
+  fi
+
+  if [[ -f "$target" ]]; then
+    backup="$target.bak.$(date +%Y%m%d%H%M%S)"
+    cp -p "$target" "$backup"
+  fi
+  printf '\n%s\n%s\n' "$marker" "$line" >> "$target"      # append, never rewrite
+
+  echo "* PATH:     added ~/.local/bin in ${target/#$HOME/\~}"
+  [[ -n "${backup:-}" ]] && echo "            (backup: ${backup/#$HOME/\~})"
+  echo "            open a new terminal for the 'who-gpu' command to work"
+}
+
 case ":$PATH:" in
   *":$HOME/.local/bin:"*) : ;;
-  *) echo "  (note: add ~/.local/bin to your PATH to use the 'who-gpu' command)" ;;
+  *)
+    if [[ "$WANT_PATH" == "1" ]]; then
+      add_local_bin_to_path
+    else
+      echo "  (note: add ~/.local/bin to your PATH to use the 'who-gpu' command)"
+    fi ;;
 esac
 
 # 2) Preferences. Written to one config file that every platform's launcher

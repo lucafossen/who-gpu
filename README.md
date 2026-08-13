@@ -64,10 +64,18 @@ override them.
 who-gpu --update
 ```
 
-That's it, on every platform. The installer **links** into your clone rather
-than copying files out of it, so a single update refreshes the `who-gpu`
-command and the desktop icon together — there's nothing to reinstall. (If the
-installer itself changed, `--update` re-runs it for you.)
+That's it, on every platform, **including Windows** — you never re-run the
+installer by hand. The installer **links** into your clone rather than copying
+files out of it, so one update refreshes the `who-gpu` command and the desktop
+icon together. If the installer itself changed, `--update` re-runs it for you,
+keeping your desktop icon if you had one.
+
+On Windows this works because the Desktop `.cmd` points at an absolute path
+inside your clone, so updating the clone updates what the icon runs. The
+installer also puts `~/.local/bin` on your `PATH` (Git Bash omits it by
+default), so `who-gpu --update` is actually runnable — open Git Bash and type
+it. That edit **appends** one line to your existing shell profile and backs the
+file up first; `./install.sh --no-path` skips it.
 
 `who-gpu --version` tells you what you're on. who-gpu checks for new versions at
 most once a day and simply mentions it — in the terminal, and as a badge in the
@@ -151,9 +159,12 @@ using OpenSSH **connection multiplexing** (`ControlMaster`/`ControlPersist`):
 - connections are hung up when you press Ctrl-C
 
 On startup you'll see `reusing one SSH connection per host (no repeat logins)`
-confirming it's active. If your `ssh` is too old to support it, who-gpu says so
-and suggests a longer interval instead — in that case set something gentle like
-`WHO_GPU_INTERVAL=60`. Disable reuse entirely with `WHO_GPU_NO_MUX=1`.
+confirming it's active. who-gpu doesn't take this on trust — it checks that a
+shared connection really was opened, and if not, it switches reuse off, says so,
+and re-probes normally. **Git Bash on Windows is reported not to support
+multiplexing**, so expect the fallback there; nothing breaks, but each refresh
+is a fresh login, so on a rate-limited or LDAP-backed fleet set a gentler
+`WHO_GPU_INTERVAL=60`. Disable reuse outright with `WHO_GPU_NO_MUX=1`.
 
 Control sockets live in `/tmp/who-gpu-mux-$UID/`, created `0700` and refused if
 it already exists owned by somebody else.

@@ -1165,6 +1165,29 @@ setup_ssh_mux() {
   return 0
 }
 
+# Did multiplexing actually happen? `ssh -G` only proves the options PARSE --
+# an ssh can accept them and then not implement them, which is reported to be
+# the case on Git Bash / Win32 OpenSSH. If no control socket appeared after a
+# full probe cycle, multiplexing is not working and must be switched off:
+# leaving it on risks every host failing rather than merely re-authenticating.
+mux_took_effect() {
+  [[ -n "${SSH_MUX_DIR:-}" ]] || return 1
+  local f
+  for f in "$SSH_MUX_DIR"/*; do
+    [[ -S "$f" ]] && return 0      # a real socket, not just any leftover file
+  done
+  return 1
+}
+
+disable_ssh_mux() {
+  local dir="${SSH_MUX_DIR:-}"
+  SSH_MUX_DIR=""
+  SSH_MUX_PERSIST=""
+  export SSH_MUX_DIR SSH_MUX_PERSIST
+  [[ -n "$dir" ]] && rmdir "$dir" 2>/dev/null
+  return 0
+}
+
 # Hang up the shared connections on the way out instead of leaving them open
 # until ControlPersist expires.
 close_ssh_mux() {
@@ -1212,14 +1235,28 @@ run_web() {
   write_shell_html
   echo "who-gpu: probing ${#hosts[@]} host(s) every ${WEB_INTERVAL}s (up to $PARALLEL at once)"
 
-  if setup_ssh_mux; then
-    echo "who-gpu: reusing one SSH connection per host (no repeat logins)"
-  else
-    echo "who-gpu: NOTE: this ssh cannot reuse connections, so every cycle opens" >&2
+  no_reuse_note() {
+    echo "who-gpu: NOTE: this ssh will not reuse connections, so every cycle opens" >&2
     echo "         a fresh login on each host. On a rate-limited or LDAP-backed" >&2
     echo "         fleet, use a longer interval:  WHO_GPU_INTERVAL=60 who-gpu --web" >&2
-  fi
+  }
+
+  setup_ssh_mux || no_reuse_note
   write_data_js
+
+  # Confirm reuse actually took effect rather than assuming it did. `ssh -G`
+  # proves only that the options parse; Git Bash / Win32 OpenSSH are reported to
+  # accept them without implementing them. The first cycle is re-run after
+  # switching off, because unsupported options may have failed it outright.
+  if [[ -n "$SSH_MUX_DIR" ]]; then
+    if mux_took_effect; then
+      echo "who-gpu: reusing one SSH connection per host (no repeat logins)"
+    else
+      disable_ssh_mux
+      no_reuse_note
+      write_data_js
+    fi
+  fi
 
   if open_browser "$WEB_OUT/fleet.html"; then
     echo "who-gpu: opened $WEB_OUT/fleet.html"

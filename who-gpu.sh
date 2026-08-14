@@ -1230,15 +1230,40 @@ web_detect_os() {
   esac
 }
 
+# The Windows-native form of a path, for handing to a native .exe.
+win_path() {
+  local p="$1"
+  if command -v cygpath >/dev/null 2>&1; then cygpath -w "$p"; return; fi
+  # cygpath missing (unusual): /c/Users/... is C:/Users/... by hand. Windows
+  # takes forward slashes, so only the drive letter needs moving.
+  case "$p" in
+    /?/*) printf '%s:%s\n' "${p:1:1}" "${p:2}" ;;
+    *)    printf '%s\n' "$p" ;;
+  esac
+}
+
 open_browser() {
-  local path="$1" url
+  local path="$1" win
   case "$(web_detect_os)" in
     darwin)
       open "$path" >/dev/null 2>&1 && return 0 ;;
     windows)
-      if command -v cygpath >/dev/null 2>&1; then url="file:///$(cygpath -m "$path")"
-      else url="file://$path"; fi
-      cmd.exe /c start "" "$url" >/dev/null 2>&1 && return 0 ;;
+      # Two Windows-only traps here. First, Git Bash and MSYS2 rewrite arguments
+      # that look like Unix paths before a native .exe sees them, and /c is a
+      # path: it is the C: drive. So cmd.exe /c arrives as cmd.exe C:\ and cmd
+      # does nothing. MSYS_NO_PATHCONV (Git Bash) and MSYS2_ARG_CONV_EXCL
+      # (MSYS2/Cygwin) switch that off for the one call that must not be touched.
+      # Second, hand `start` a plain Windows path rather than a file:// URL --
+      # a URL would need the spaces in C:\Users\First Last percent-encoded, and
+      # Windows already knows to open .html in the default browser.
+      win="$(win_path "$path")"
+      MSYS_NO_PATHCONV=1 MSYS2_ARG_CONV_EXCL='*' \
+        cmd.exe /c start "" "$win" >/dev/null 2>&1 && return 0
+      MSYS_NO_PATHCONV=1 MSYS2_ARG_CONV_EXCL='*' \
+        powershell.exe -NoProfile -Command "Start-Process '${win//\'/\'\'}'" >/dev/null 2>&1 && return 0
+      # explorer.exe opens the file and *then* exits non-zero, so its status
+      # says nothing. Ask it last and take silence for success.
+      command -v explorer.exe >/dev/null 2>&1 && { explorer.exe "$win" >/dev/null 2>&1; return 0; } ;;
     *)
       command -v xdg-open >/dev/null 2>&1 && xdg-open "$path" >/dev/null 2>&1 && return 0 ;;
   esac
@@ -1288,7 +1313,13 @@ run_web() {
     echo "who-gpu: opened $WEB_OUT/fleet.html"
   else
     echo "who-gpu: open this in your browser:"
-    echo "         file://$WEB_OUT/fleet.html"
+    # A Unix file:// URL is no use to a Windows browser, so hand that shell the
+    # path in the form it can actually paste.
+    if [[ "$(web_detect_os)" == windows ]]; then
+      echo "         $(win_path "$WEB_OUT/fleet.html")"
+    else
+      echo "         file://$WEB_OUT/fleet.html"
+    fi
   fi
   echo "who-gpu: press Ctrl-C to stop (closing this window also stops it)."
   notify_update

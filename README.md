@@ -4,18 +4,13 @@ A tiny Bash tool that SSHes into a list of machines, runs
 `nvidia-smi` (and a bit of `ps`/`who`), and tells you **which machines are in
 use and by which users**.
 
-```
-$ who-gpu
-Probing 9 host(s) with up to 6 in parallel...
+<img width="2150" height="702" alt="image" src="https://github.com/user-attachments/assets/5f091518-7f6c-4f75-9bf4-d0be66834c59" />
 
-cluster-node-1             0/1 GPUs busy   gpu:  none   logged in:  none
-cluster-node-2             1/2 GPUs busy   gpu:  alice5   logged in:  none
-private_server             4/4 GPUs busy   gpu:  bob2 alice5   logged in:  bob2 alice5
-gpubox                     UNREACHABLE (channel 0: open failed: connect failed: No route to host)
-```
 
-Prefer a browser? `who-gpu --web` shows the same thing as a live
-[dashboard](#web-gui).
+Prefer a GUI? `who-gpu --web` shows a live
+[dashboard](#web-gui):
+<img width="2702" height="1632" alt="image" src="https://github.com/user-attachments/assets/22aa8c8c-db4e-456f-ac3f-eb4401c88ee4" />
+
 
 ## Why
 

@@ -660,7 +660,9 @@ json_words_array() {
 
 # Probe one host and write its JSON object to $WEB_TMP/<idx>.json. Keyed by
 # index so the caller can reassemble the array in the order hosts were given,
-# which xargs -P cannot guarantee on its own.
+# which xargs -P cannot guarantee on its own. Written to a temp name and renamed
+# so the result appears all at once: the --web publisher reads these files while
+# other hosts are still being probed.
 probe_json_one() {
   local idx="$1" host="$2"
   local out rc line busy total gu li gpus detail err
@@ -674,7 +676,8 @@ probe_json_one() {
       printf '"reachable":false,"error":%s,' "$(printf '%s' "$err" | json_str)"
       printf '"busy":0,"total":0,"gpu_users":[],"logged_in":[],"gpus":[],'
       printf '"detail":%s}'   "$(printf '%s' "$out" | json_str)"
-    } > "$WEB_TMP/$idx.json"
+    } > "$WEB_TMP/$idx.json.tmp"
+    mv -f "$WEB_TMP/$idx.json.tmp" "$WEB_TMP/$idx.json"
     return
   fi
 
@@ -706,30 +709,65 @@ probe_json_one() {
     printf '"logged_in":%s,'  "$(json_words_array "$li")"
     printf '"gpus":[%s],'     "$gpus"
     printf '"detail":%s}'     "$(printf '%s' "$detail" | json_str)"
-  } > "$WEB_TMP/$idx.json"
+  } > "$WEB_TMP/$idx.json.tmp"
+  mv -f "$WEB_TMP/$idx.json.tmp" "$WEB_TMP/$idx.json"
 }
 
-# Probe every host in parallel, then emit one JSON document in host order.
-collect_fleet_json() {
-  local i first=1
-  rm -f "$WEB_TMP"/*.json 2>/dev/null
+# Probe every host in parallel. Each result lands in $WEB_TMP/<idx>.json as its
+# host answers; last cycle's results are parked in prev/ first so a host keeps
+# its old numbers until new ones arrive. CYCLE_TS is when the last full cycle
+# finished, 0 until one has.
+CYCLE_TS=0
+probe_fleet() {
+  local i f
+  rm -rf "$WEB_TMP/prev"; mkdir -p "$WEB_TMP/prev"
+  for f in "$WEB_TMP"/*.json; do [[ -f "$f" ]] && mv -f "$f" "$WEB_TMP/prev/"; done
 
   # "<idx> <host>" pairs; -n 2 hands each pair to one worker. Host names never
   # contain spaces (they are ssh aliases or user@host), so this split is safe.
   for i in "${!hosts[@]}"; do printf '%s %s\n' "$i" "${hosts[$i]}"; done \
     | xargs -P "$PARALLEL" -n 2 bash -c 'probe_json_one "$1" "$2"' _
+  CYCLE_TS=$(date +%s)
+}
 
-  printf '{"ts":%s,"interval":%s,"version":%s,"update":%s,"hosts":[' \
-    "$(date +%s)" "$WEB_INTERVAL" \
-    "$(version_string | json_str)" \
-    "$( { update_available || true; } | json_str)"
+# How many hosts have answered in the current cycle.
+results_landed() {
+  local n=0 f
+  for f in "$WEB_TMP"/*.json; do [[ -f "$f" ]] && n=$((n + 1)); done
+  echo "$n"
+}
+
+# One JSON document in host order, built from the freshest data we have per
+# host: this cycle's result if it has landed, else last cycle's, else a
+# placeholder the page shows as "probing". Safe to call mid-cycle.
+emit_fleet_json() {
+  local i pending=0 body=""
   for i in "${!hosts[@]}"; do
-    [[ -f "$WEB_TMP/$i.json" ]] || continue
-    [[ $first -eq 1 ]] || printf ','
-    first=0
-    cat "$WEB_TMP/$i.json"
+    body="${body:+$body,}"
+    if [[ -f "$WEB_TMP/$i.json" ]]; then
+      body+=$(cat "$WEB_TMP/$i.json")
+      continue
+    fi
+    pending=$((pending + 1))
+    if [[ -f "$WEB_TMP/prev/$i.json" ]]; then
+      body+=$(cat "$WEB_TMP/prev/$i.json")
+    else
+      body+="{\"name\":$(printf '%s' "${hosts[$i]}" | json_str),\"probing\":true,"
+      body+='"reachable":false,"error":"","busy":0,"total":0,'
+      body+='"gpu_users":[],"logged_in":[],"gpus":[],"detail":""}'
+    fi
   done
-  printf ']}\n'
+  printf '{"ts":%s,"pending":%s,"interval":%s,"version":%s,"update":%s,"hosts":[%s]}\n' \
+    "$CYCLE_TS" "$pending" "$WEB_INTERVAL" \
+    "$(version_string | json_str)" \
+    "$( { update_available || true; } | json_str)" \
+    "$body"
+}
+
+# --json: probe everything, then emit once.
+collect_fleet_json() {
+  probe_fleet
+  emit_fleet_json
 }
 
 export -f probe ssh_probe_raw probe_json_one json_str json_words_array
@@ -807,6 +845,7 @@ write_shell_html() {
   .card-wrap.partial { border-left-color: #f0c24b; }
   .card-wrap.full    { border-left-color: #e5735f; }
   .card-wrap.down    { border-left-color: #8a8a8a; opacity: .8; }
+  .card-wrap.probing { border-left-color: #7fb3e6; }
 
   .card { display: flex; }
   .card .left  { padding: 14px 16px; flex: 0 0 46%; }
@@ -823,6 +862,8 @@ write_shell_html() {
   .card-wrap.partial .percent span { color: #f5d180; }
   .card-wrap.full    .percent span { color: #f0968a; }
   .card-wrap.down    .percent span { color: #9e9e9e; font-size: 30px; }
+  .card-wrap.probing .percent span { color: #a9cdf0; animation: pulse 1.2s ease-in-out infinite; }
+  @keyframes pulse { 50% { opacity: .35; } }
   .sublabel { font-size: 11px; text-transform: uppercase; letter-spacing: .6px; color: #a8a8a8; }
   .procuser { margin-top: 8px; font-size: 13px; color: #e6e6e6; word-break: break-word; }
   .procuser .none { color: #909090; }
@@ -879,6 +920,9 @@ write_shell_html() {
   <div class="systems-container" id="sec-busy" hidden>
     <h2>In use</h2><div class="cards-container" id="cards-busy"></div>
   </div>
+  <div class="systems-container" id="sec-probing" hidden>
+    <h2>Probing</h2><div class="cards-container" id="cards-probing"></div>
+  </div>
   <div class="systems-container" id="sec-down" hidden>
     <h2>Unreachable</h2><div class="cards-container" id="cards-down"></div>
   </div>
@@ -891,7 +935,7 @@ write_shell_html() {
 (function () {
   "use strict";
 
-  var POLL_MS = 3000;         // how often to re-read the data file (a local read)
+  var POLL_MS = 1000;         // how often to re-read the data file (a local read)
   var data = null;            // most recent payload
   var cards = {};             // host name -> DOM nodes, so updates patch in place
   var expanded = {};          // host name -> detail pane open?
@@ -927,11 +971,13 @@ write_shell_html() {
     if (node.textContent !== value) node.textContent = value;
   }
   function classFor(h) {
+    if (h.probing) return "probing";
     if (!h.reachable) return "down";
     if (h.total === 0 || h.busy === 0) return "free";
     return h.busy >= h.total ? "full" : "partial";
   }
   function statusWord(h) {
+    if (h.probing) return "Probing";
     if (!h.reachable) return "Unreachable";
     if (h.total === 0) return "No GPUs";
     if (h.busy === 0) return "Free";
@@ -1002,7 +1048,11 @@ write_shell_html() {
 
     setText(r.title, h.name);
 
-    if (!h.reachable) {
+    if (h.probing) {
+      setText(r.big, "…");
+      setText(r.sup, "");
+      setText(r.sub, "probing");
+    } else if (!h.reachable) {
       setText(r.big, "—");
       setText(r.sup, "");
       setText(r.sub, "no response");
@@ -1024,7 +1074,7 @@ write_shell_html() {
     setText(r.stats["Status"], statusWord(h));
     setText(r.stats["Peak util"], pu >= 0 ? pu + "%" : "—");
     setText(r.stats["Memory"], mp >= 0 ? mp + "%" : "—");
-    setText(r.stats["Logged in"], joinUsers(h.logged_in) || "nobody");
+    setText(r.stats["Logged in"], joinUsers(h.logged_in) || (h.probing ? "—" : "nobody"));
 
     if (!h.reachable && h.error) setText(r.stats["Status"], h.error);
 
@@ -1051,7 +1101,7 @@ write_shell_html() {
 
     var det = h.detail || "";
     if (r.detail.textContent !== det) r.detail.textContent = det;
-    r.detail.hidden = !expanded[h.name];
+    r.detail.hidden = !expanded[h.name] || !det;
 
     return r;
   }
@@ -1075,15 +1125,15 @@ write_shell_html() {
       return a.name.localeCompare(b.name);
     });
 
-    var buckets = { free: [], busy: [], down: [] };
+    var buckets = { free: [], busy: [], probing: [], down: [] };
     shown.forEach(function (h) {
       var c = classFor(h);
-      if (c === "down") buckets.down.push(h);
+      if (c === "down" || c === "probing") buckets[c].push(h);
       else if (c === "free") buckets.free.push(h);
       else buckets.busy.push(h);
     });
 
-    ["free", "busy", "down"].forEach(function (key) {
+    ["free", "busy", "probing", "down"].forEach(function (key) {
       var container = $("cards-" + key);
       var list = buckets[key];
       list.forEach(function (h, i) {
@@ -1106,9 +1156,16 @@ write_shell_html() {
     }
 
     var free = data.hosts.filter(function (h) { return classFor(h) === "free"; }).length;
-    var down = data.hosts.filter(function (h) { return !h.reachable; }).length;
-    var msg = "<strong>" + free + " of " + data.hosts.length + "</strong> machines free";
-    if (down) msg += " · " + down + " unreachable";
+    var down = data.hosts.filter(function (h) { return classFor(h) === "down"; }).length;
+    var probing = data.hosts.filter(function (h) { return h.probing; }).length;
+    var msg;
+    if (probing === data.hosts.length) {
+      msg = "Probing <strong>" + probing + "</strong> machines&hellip;";
+    } else {
+      msg = "<strong>" + free + " of " + data.hosts.length + "</strong> machines free";
+      if (down) msg += " · " + down + " unreachable";
+      if (probing) msg += " · " + probing + " still probing";
+    }
     if ($("summary").innerHTML !== msg) $("summary").innerHTML = msg;
 
     tickStatus();
@@ -1124,9 +1181,13 @@ write_shell_html() {
   }
   function tickStatus() {
     if (!data) return;
+    // ts is when the last full probe cycle finished; before the first one there
+    // is nothing to be stale relative to.
+    if (!data.ts) { setStatus(false, "probing\u2026"); return; }
     var age = Math.max(0, Math.round(Date.now() / 1000 - data.ts));
     var limit = Math.max(30, (data.interval || 10) * 3);
     var txt = age < 2 ? "updated just now" : "updated " + age + "s ago";
+    if (data.pending) txt += " · " + data.pending + " refreshing";
     if (paused) txt += " · paused";
     setStatus(age > limit, age > limit ? txt + " · probe loop stopped?" : txt);
   }
@@ -1155,8 +1216,51 @@ WEB_HTML_EOF
 # half-finished, so the page never loads a torn file.
 write_data_js() {
   local tmp="$WEB_OUT/fleet-data.js.new"
-  { printf 'whoGpuUpdate('; collect_fleet_json; printf ');\n'; } > "$tmp" \
+  { printf 'whoGpuUpdate('; emit_fleet_json; printf ');\n'; } > "$tmp" \
     && mv -f "$tmp" "$WEB_OUT/fleet-data.js"
+}
+
+# Republish the data file each time another host answers, so the page fills in
+# host by host instead of waiting for the slowest one. Runs in the background
+# for the length of one probe cycle; the probe itself stays in the foreground
+# so Ctrl-C still reaches the ssh processes (background jobs ignore SIGINT).
+#
+# While connection reuse is switched on but not yet proven (no control socket
+# yet), nothing is published: on an ssh that accepts the options without
+# implementing them, every result of that first cycle is a bogus failure, and
+# the page is better off saying "probing" than "unreachable" for a few seconds.
+ok_to_publish() {
+  [[ -z "${SSH_MUX_DIR:-}" ]] || mux_took_effect
+}
+PUBLISHER_PID=""
+start_publisher() {
+  (
+    local seen=0 n
+    while :; do
+      sleep 0.5
+      n=$(results_landed)
+      [[ "$n" -eq "$seen" ]] && continue
+      ok_to_publish || continue
+      seen=$n
+      write_data_js
+    done
+  ) &
+  PUBLISHER_PID=$!
+}
+stop_publisher() {
+  [[ -n "$PUBLISHER_PID" ]] || return 0
+  kill "$PUBLISHER_PID" 2>/dev/null
+  wait "$PUBLISHER_PID" 2>/dev/null
+  PUBLISHER_PID=""
+}
+
+# One --web probe cycle: publish as results land, then once more when complete
+# so the file carries the finished cycle's timestamp.
+web_cycle() {
+  start_publisher
+  probe_fleet
+  stop_publisher
+  ok_to_publish && write_data_js
 }
 
 # Can this ssh reuse connections? `-G` only parses the config and prints it --
@@ -1275,10 +1379,9 @@ run_web() {
   WEB_TMP=$(mktemp -d 2>/dev/null || mktemp -d -t who-gpu) || {
     echo "who-gpu: cannot create a temp directory" >&2; exit 1; }
   export WEB_TMP
-  trap 'close_ssh_mux; rm -rf "$WEB_TMP"; printf "\nwho-gpu: stopped. Dashboard left at %s\n" "$WEB_OUT/fleet.html"; exit 0' INT TERM HUP
+  trap 'stop_publisher; close_ssh_mux; rm -rf "$WEB_TMP"; printf "\nwho-gpu: stopped. Dashboard left at %s\n" "$WEB_OUT/fleet.html"; exit 0' INT TERM HUP
 
   write_shell_html
-  echo "who-gpu: probing ${#hosts[@]} host(s) (up to $PARALLEL at once)"
 
   # Announced only after we know whether reuse worked, since that decides the
   # refresh rate. Saying "every 10s" and then changing it would be a lie.
@@ -1290,25 +1393,12 @@ run_web() {
       echo "         Override with WHO_GPU_INTERVAL if you want it faster." >&2
     fi
   }
-
   setup_ssh_mux || no_reuse_note
+
+  # Open the page before probing anything: every host starts out as "probing"
+  # and fills in as it answers, rather than the browser appearing only once the
+  # slowest host has been heard from.
   write_data_js
-
-  # Confirm reuse actually took effect rather than assuming it did. `ssh -G`
-  # proves only that the options parse; Git Bash / Win32 OpenSSH are reported to
-  # accept them without implementing them. The first cycle is re-run after
-  # switching off, because unsupported options may have failed it outright.
-  if [[ -n "$SSH_MUX_DIR" ]]; then
-    if mux_took_effect; then
-      echo "who-gpu: reusing one SSH connection per host (no repeat logins)"
-    else
-      disable_ssh_mux
-      no_reuse_note
-      write_data_js      # re-probe, and re-stamp the data with the new interval
-    fi
-  fi
-  echo "who-gpu: refreshing every ${WEB_INTERVAL}s"
-
   if open_browser "$WEB_OUT/fleet.html"; then
     echo "who-gpu: opened $WEB_OUT/fleet.html"
   else
@@ -1321,12 +1411,31 @@ run_web() {
       echo "         file://$WEB_OUT/fleet.html"
     fi
   fi
+  echo "who-gpu: probing ${#hosts[@]} host(s) (up to $PARALLEL at once)"
+
+  web_cycle
+
+  # Confirm reuse actually took effect rather than assuming it did. `ssh -G`
+  # proves only that the options parse; Git Bash / Win32 OpenSSH are reported to
+  # accept them without implementing them. The first cycle is re-run after
+  # switching off, because unsupported options may have failed it outright.
+  if [[ -n "$SSH_MUX_DIR" ]]; then
+    if mux_took_effect; then
+      echo "who-gpu: reusing one SSH connection per host (no repeat logins)"
+    else
+      disable_ssh_mux
+      no_reuse_note
+      rm -f "$WEB_TMP"/*.json; CYCLE_TS=0   # that cycle's results are not to be trusted
+      web_cycle          # re-probe, and re-stamp the data with the new interval
+    fi
+  fi
+  echo "who-gpu: refreshing every ${WEB_INTERVAL}s"
   echo "who-gpu: press Ctrl-C to stop (closing this window also stops it)."
   notify_update
 
   while true; do
     sleep "$WEB_INTERVAL"
-    write_data_js
+    web_cycle
   done
 }
 

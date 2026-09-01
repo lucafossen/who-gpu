@@ -117,9 +117,10 @@ lets you toggle each one on or off. Flipping a host **on** adds a `#probe` marke
 who-gpu --web
 ```
 
-Probes the fleet, opens a dashboard in your browser, and keeps it current until
-Ctrl-C. Machines are grouped **Available** / **In use** / **Unreachable**; click
-one for the full breakdown. All the usual flags still work
+Opens a dashboard in your browser straight away and fills it in as each machine
+answers, then keeps it current until Ctrl-C. Machines are grouped **Available**
+/ **In use** / **Unreachable** (plus **Probing** while results are still coming
+in); click one for the full breakdown. All the usual flags still work
 (`who-gpu --web -f myhosts.txt`).
 
 No server, no dependencies: the page is a file on disk that the probe loop

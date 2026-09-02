@@ -31,7 +31,10 @@ main() {
   fi
 
   if [ "$MODE" = "terminal" ]; then
-    "$DIR/who-gpu.sh" "$@"
+    # Explicit, so a DEFAULT_MODE=web preference cannot turn this icon into the
+    # dashboard: ICON_MODE is what the icon opens, DEFAULT_MODE is what a plain
+    # `who-gpu` opens, and the two are set independently.
+    "$DIR/who-gpu.sh" --summary "$@"
     echo
     echo "======================================================================"
     read -r -p "Done. Press Enter to close this window... "

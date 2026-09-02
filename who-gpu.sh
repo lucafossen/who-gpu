@@ -11,8 +11,8 @@
 # compact one-line-per-host summary; plain `who-gpu` behaves like `who-gpu -S -s`.
 #
 # Setup:
-#   who-gpu --setup                   # scan SSH hosts, toggle which to probe
-#                                     # (adds/removes #probe markers for you)
+#   who-gpu --setup                   # choose hosts to probe and what a plain
+#                                     # `who-gpu` opens (terminal or web)
 #
 # Usage:
 #   who-gpu                           # ssh-config hosts, compact summary (default)
@@ -80,6 +80,7 @@ DO_VERSION=0            # 1 = --version
 # hand-edited later without re-running the installer.
 CONFIG_FILE="${WHO_GPU_CONFIG:-${XDG_CONFIG_HOME:-$HOME/.config}/who-gpu/config}"
 CFG_ICON_MODE="web"     # what the desktop icon opens: web | terminal
+CFG_DEFAULT_MODE="terminal"  # what a plain `who-gpu` opens: terminal | web
 CFG_INTERVAL=""         # dashboard refresh seconds (empty = built-in default)
 CFG_UPDATE_CHECK=1      # 1 = tell the user when a newer version exists
 
@@ -92,12 +93,30 @@ load_config() {
     key="${key%%[[:space:]]*}"
     case "$key" in
       ICON_MODE)    [[ "$val" == "web" || "$val" == "terminal" ]] && CFG_ICON_MODE="$val" ;;
+      DEFAULT_MODE) [[ "$val" == "web" || "$val" == "terminal" ]] && CFG_DEFAULT_MODE="$val" ;;
       INTERVAL)     [[ "$val" =~ ^[0-9]+$ ]] && CFG_INTERVAL="$val" ;;
       UPDATE_CHECK) [[ "$val" =~ ^[01]$ ]]   && CFG_UPDATE_CHECK="$val" ;;
     esac
   done < <(grep -E '^[A-Z_]+=' "$CONFIG_FILE" 2>/dev/null)
 }
 load_config
+
+# Set one KEY=value in the config file, keeping everything else in it as is.
+# The file is normally written by install.sh; this exists so --setup can change
+# a preference without a reinstall. Creates the file if there is none yet.
+set_config_key() {
+  local key="$1" val="$2" tmp
+  mkdir -p "$(dirname "$CONFIG_FILE")" || return 1
+  if [[ -f "$CONFIG_FILE" ]] && grep -q "^$key=" "$CONFIG_FILE"; then
+    tmp=$(mktemp 2>/dev/null || mktemp -t who-gpu) || return 1
+    awk -v k="$key" -v v="$val" 'index($0, k "=") == 1 { print k "=" v; next } { print }' \
+      "$CONFIG_FILE" > "$tmp" && cat "$tmp" > "$CONFIG_FILE"   # in place: keeps permissions
+    rm -f "$tmp"
+  else
+    [[ -f "$CONFIG_FILE" ]] || echo "# who-gpu preferences. Edit freely, or re-run ./install.sh to change them." > "$CONFIG_FILE"
+    printf '%s=%s\n' "$key" "$val" >> "$CONFIG_FILE"
+  fi
+}
 
 # Precedence: environment, then config, then the built-in default. Either of the
 # first two counts as the user having picked a number, which the automatic
@@ -150,14 +169,46 @@ if [[ ${#_modes[@]} -gt 1 ]]; then
   echo "who-gpu: pick one output mode, got:${MODE_FLAGS}" >&2
   exit 1
 fi
+# No mode flag at all: the config decides. Any explicit flag still wins.
+[[ -z "$MODE_FLAGS" && "$CFG_DEFAULT_MODE" == "web" ]] && DO_WEB=1
 
 # Interactive setup: scans ~/.ssh/config, shows every Host entry with its current
 # probe state, and lets you toggle each one on or off. Works for first-time setup
 # and for changing an existing configuration (adding OR removing #probe markers).
 # Writes changes back after making a timestamped backup.
 run_setup_wizard() {
-  local cfg="$SSH_CONFIG_FILE"
   echo "who-gpu setup"
+  echo
+  setup_default_mode
+  echo
+  setup_probe_hosts
+}
+
+# What should a plain `who-gpu` open? Saved as DEFAULT_MODE in the config file.
+setup_default_mode() {
+  local reply cur="$CFG_DEFAULT_MODE"
+  echo "What should plain 'who-gpu' (no flags) open?  [current: $cur]"
+  echo "  1) the compact text report in this terminal"
+  echo "  2) the live web dashboard in your browser"
+  printf "Enter 1 or 2, or Enter to keep '%s': " "$cur"
+  IFS= read -r reply </dev/tty || reply=""
+  case "$reply" in
+    1) CFG_DEFAULT_MODE=terminal ;;
+    2) CFG_DEFAULT_MODE=web ;;
+    "") return 0 ;;
+    *) echo "  (ignoring: $reply, keeping '$cur')"; return 0 ;;
+  esac
+  [[ "$CFG_DEFAULT_MODE" == "$cur" ]] && return 0
+  if set_config_key DEFAULT_MODE "$CFG_DEFAULT_MODE"; then
+    echo "  Saved DEFAULT_MODE=$CFG_DEFAULT_MODE to $CONFIG_FILE"
+  else
+    echo "  !! could not write $CONFIG_FILE" >&2
+  fi
+}
+
+# Scan ~/.ssh/config and toggle which Host blocks carry a #probe marker.
+setup_probe_hosts() {
+  local cfg="$SSH_CONFIG_FILE"
   echo "SSH config: $cfg"
   echo
   if [[ ! -e "$cfg" ]]; then
@@ -809,6 +860,8 @@ write_shell_html() {
   }
   .pagenav button { cursor: pointer; }
   .pagenav button:hover { background: #5a5a5a; }
+  .pagenav button:disabled { cursor: default; opacity: .45; }
+  .pagenav button:disabled:hover { background: #4d4d4d; }
   .pagenav input { min-width: 160px; }
   #status { font-size: 13px; color: #b9b9b9; white-space: nowrap; }
   #status.stale { color: #ffb347; font-weight: 600; }
@@ -904,7 +957,7 @@ write_shell_html() {
       <option value="busiest">Sort: busiest first</option>
       <option value="freest">Sort: freest first</option>
     </select>
-    <button id="refresh" type="button">Refresh</button>
+    <button id="probe" type="button" title="Ask who-gpu to probe the fleet right now">Probe now</button>
     <button id="pause" type="button">Pause</button>
     <span id="status">loading&hellip;</span>
     <a id="update" href="#" hidden></a>
@@ -941,6 +994,8 @@ write_shell_html() {
   var expanded = {};          // host name -> detail pane open?
   var paused = false;
   var pollTimer = null;
+  var probeAsked = 0;         // when "Probe now" was clicked; 0 = no request open
+  var probeTsSeen = 0;        // data.ts at the time of the click
 
   var $ = function (id) { return document.getElementById(id); };
 
@@ -957,8 +1012,34 @@ write_shell_html() {
 
   window.whoGpuUpdate = function (payload) {
     data = payload;
+    if (probeAsked && (payload.pending > 0 || payload.ts !== probeTsSeen)) probeAsked = 0;  // a cycle started: request honoured
     render();
   };
+
+  // --- probe on demand ----------------------------------------------------
+  // A file:// page cannot write or open sockets; the one trace a read leaves is
+  // the file's access time, which the probe loop polls (see the shell side).
+  // Loading probe-now.js IS the request. If no cycle starts within a few
+  // seconds while the loop is clearly alive, this filesystem does not record
+  // access times and the button is switched off rather than left lying.
+  var PROBE_WAIT_MS = 5000;
+  function askProbe() {
+    var s = document.createElement("script");
+    s.src = "probe-now.js?t=" + Date.now();
+    s.onload = function () { s.remove(); };
+    s.onerror = function () { s.remove(); };
+    document.body.appendChild(s);
+    probeAsked = Date.now();
+    probeTsSeen = data ? data.ts : 0;
+    tickStatus();
+  }
+  function probeUnsupported() {
+    var b = $("probe");
+    b.disabled = true;
+    b.title = "Not available here: this filesystem does not record file access times, " +
+              "which is the only way a local page can signal the probe loop. " +
+              "Press Enter in the who-gpu terminal instead.";
+  }
 
   // --- helpers ------------------------------------------------------------
   function el(tag, cls, text) {
@@ -1172,8 +1253,8 @@ write_shell_html() {
   }
 
   // --- staleness ----------------------------------------------------------
-  // The page cannot trigger a probe, so it must never let old numbers pass for
-  // current ones. This is the honesty valve.
+  // The page cannot make the loop run, so it must never let old numbers pass
+  // for current ones. This is the honesty valve.
   function setStatus(stale, text) {
     var s = $("status");
     setText(s, text);
@@ -1188,12 +1269,21 @@ write_shell_html() {
     var limit = Math.max(30, (data.interval || 10) * 3);
     var txt = age < 2 ? "updated just now" : "updated " + age + "s ago";
     if (data.pending) txt += " · " + data.pending + " refreshing";
+    if (probeAsked) {
+      if (paused) pull();                       // still need to see the answer
+      if (Date.now() - probeAsked > PROBE_WAIT_MS) {
+        probeAsked = 0;
+        if (age <= limit) probeUnsupported();   // loop alive, click unseen
+      } else {
+        txt += " · probe requested\u2026";
+      }
+    }
     if (paused) txt += " · paused";
     setStatus(age > limit, age > limit ? txt + " · probe loop stopped?" : txt);
   }
 
   // --- controls -----------------------------------------------------------
-  $("refresh").addEventListener("click", pull);
+  $("probe").addEventListener("click", askProbe);
   $("filter").addEventListener("input", render);
   $("sort").addEventListener("change", render);
   $("pause").addEventListener("click", function () {
@@ -1261,6 +1351,56 @@ web_cycle() {
   probe_fleet
   stop_publisher
   ok_to_publish && write_data_js
+}
+
+# ---- probe on demand ------------------------------------------------------
+# Two ways to ask for a cycle before the interval is up: press Enter in this
+# terminal, or click "Probe now" in the page. The page is a file:// document
+# and can only READ files, so its request is the read itself: the button loads
+# probe-now.js, and the kernel records that read in the file's access time,
+# which the loop polls. Each cycle re-arms the marker with touch, because
+# relatime only updates atime when it is not newer than mtime.
+#
+# Best effort: mounts with noatime, and Windows volumes that do not record
+# access times, never register the click. The page notices (no cycle starts
+# within a few seconds) and greys the button out on its own.
+PROBE_MARKER=""
+PROBE_ARMED_ATIME=""
+file_atime() {
+  stat -c %X "$1" 2>/dev/null || stat -f %a "$1" 2>/dev/null   # GNU, then BSD
+}
+arm_probe_marker() {
+  PROBE_MARKER="$WEB_OUT/probe-now.js"
+  [[ -f "$PROBE_MARKER" ]] || printf '// Loading this file asks who-gpu for a probe (see wait_for_next_cycle).\n' > "$PROBE_MARKER"
+  touch "$PROBE_MARKER"
+  PROBE_ARMED_ATIME=$(file_atime "$PROBE_MARKER")
+}
+probe_requested() {
+  [[ -n "$PROBE_ARMED_ATIME" && "$(file_atime "$PROBE_MARKER")" != "$PROBE_ARMED_ATIME" ]]
+}
+
+# Wait for the next cycle: the interval, or sooner if asked. Polled in
+# one-second slices; read -t needs whole seconds on bash 3.2 (macOS).
+STDIN_USABLE=1
+wait_for_next_cycle() {
+  local left="$WEB_INTERVAL" line rc
+  arm_probe_marker
+  while (( left > 0 )); do
+    if [[ "$STDIN_USABLE" == 1 && -t 0 ]]; then
+      IFS= read -r -t 1 line; rc=$?
+      if [[ $rc -eq 0 ]]; then
+        echo "who-gpu: probing now"; return 0
+      elif [[ $rc -lt 128 ]]; then
+        STDIN_USABLE=0     # EOF, not a timeout: stdin is gone, stop asking it
+      fi
+    else
+      sleep 1
+    fi
+    if probe_requested; then
+      echo "who-gpu: probe requested from the page"; return 0
+    fi
+    left=$((left - 1))
+  done
 }
 
 # Can this ssh reuse connections? `-G` only parses the config and prints it --
@@ -1399,6 +1539,7 @@ run_web() {
   # and fills in as it answers, rather than the browser appearing only once the
   # slowest host has been heard from.
   write_data_js
+  arm_probe_marker
   if open_browser "$WEB_OUT/fleet.html"; then
     echo "who-gpu: opened $WEB_OUT/fleet.html"
   else
@@ -1429,12 +1570,12 @@ run_web() {
       web_cycle          # re-probe, and re-stamp the data with the new interval
     fi
   fi
-  echo "who-gpu: refreshing every ${WEB_INTERVAL}s"
+  echo "who-gpu: refreshing every ${WEB_INTERVAL}s; press Enter to probe now"
   echo "who-gpu: press Ctrl-C to stop (closing this window also stops it)."
   notify_update
 
   while true; do
-    sleep "$WEB_INTERVAL"
+    wait_for_next_cycle
     web_cycle
   done
 }

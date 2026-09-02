@@ -43,8 +43,13 @@ often it refreshes; flags skip the questions:
 ```bash
 ./install.sh --icon --icon-mode terminal   # text report instead
 ./install.sh --icon --interval 30          # dashboard, pinned to 30s
+./install.sh --default-mode web            # plain `who-gpu` opens the dashboard
 ./install.sh --no-update-check             # never check for new versions
 ```
+
+A plain `who-gpu` prints the text report; set `DEFAULT_MODE=web` (the flag
+above, or `who-gpu --setup`) to open the dashboard instead. Explicit flags
+always win.
 
 Answers go to `~/.config/who-gpu/config` — plain text, safe to edit. Re-running
 the installer keeps your choices.
@@ -107,9 +112,11 @@ Run the guided setup (also runs on first-time launch):
 who-gpu --setup
 ```
 
-It scans your `~/.ssh/config`, shows every host with its current probe state, and
-lets you toggle each one on or off. Flipping a host **on** adds a `#probe` marker, flipping it
-**off** removes one. Your config is backed up (timestamped) before any change.
+It asks what a plain `who-gpu` should open, then scans your `~/.ssh/config`,
+shows every host with its current
+probe state, and lets you toggle each one on or off. Flipping a host **on** adds
+a `#probe` marker, flipping it **off** removes one. Your config is backed up
+(timestamped) before any change.
 
 ## Web GUI
 
@@ -124,9 +131,13 @@ in); click one for the full breakdown. All the usual flags still work
 (`who-gpu --web -f myhosts.txt`).
 
 No server, no dependencies: the page is a file on disk that the probe loop
-rewrites, which is why it works everywhere the CLI does. The page can't trigger
-a probe itself, so it always shows how old its data is and flags it loudly if
-the loop stops.
+rewrites, which is why it works everywhere the CLI does. The page always shows
+how old its data is and flags it loudly if the loop stops.
+
+To probe right away instead of waiting for the next refresh, press **Enter**
+in the who-gpu terminal or click **Probe now** in the page. The button works by
+reading a marker file the loop watches for access; on filesystems that don't
+record access times (`noatime`, most Windows volumes) it greys itself out.
 
 Files live in `~/who-gpu-web/` and stay there after you quit, so you can reopen
 the last probe (clearly marked stale). Not `~/.cache`, because snap- and
@@ -170,15 +181,16 @@ a `#probe` comment.
 
 ## Options
 
-By default who-gpu prints the compact summary and takes hosts from
-`~/.ssh/config`. The flags below change that:
+By default who-gpu prints the compact summary (or the dashboard, with
+`DEFAULT_MODE=web`) and takes hosts from `~/.ssh/config`. The flags below
+change that:
 
 | Flag | Meaning |
 |------|---------|
 | `--web` | Live dashboard in your browser (see [Web GUI](#web-gui)) |
 | `--update` | Update to the latest version (see [Updating](#updating)) |
 | `--version` | Print the installed version |
-| `--setup` | Interactively scan SSH hosts and toggle `#probe` markers on/off |
+| `--setup` | Pick what plain `who-gpu` opens; toggle `#probe` markers on/off |
 | `-F`, `--full` | Verbose breakdown instead of the compact summary |
 | `-s`, `--summary` | Compact one line per host (the default) |
 | `-S`, `--ssh-config` | Read hosts from `~/.ssh/config` `#probe` markers (the default) |

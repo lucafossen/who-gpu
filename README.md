@@ -1,22 +1,22 @@
 # who-gpu
 
-A tiny Bash tool that SSHes into a list of machines, runs
+A small Bash tool that SSHes into a list of machines, runs
 `nvidia-smi` (and a bit of `ps`/`who`), and tells you **which machines are in
 use and by which users**.
 
 <img width="2150" height="702" alt="image" src="https://github.com/user-attachments/assets/5f091518-7f6c-4f75-9bf4-d0be66834c59" />
 
 
-Prefer a GUI? `who-gpu --web` shows a live
+Also includes a dependency-free web GUI:
 [dashboard](#web-gui):
 <img width="2702" height="1632" alt="image" src="https://github.com/user-attachments/assets/22aa8c8c-db4e-456f-ac3f-eb4401c88ee4" />
 
 
 ## Why
 
-On a shared GPU fleet the recurring question is "which machines are free, and who's using them?" This answers it in one command.
+On a shared GPU one often needs to figure out which machines are free, and who's using them. This gives an insightful, easily readable overview of that.
 
-## Requirements
+## Requirements & platform support
 
 - **Local:** `bash`, `ssh`, and standard coreutils.
 - **Remote:**
@@ -25,51 +25,29 @@ On a shared GPU fleet the recurring question is "which machines are free, and wh
   - `nvidia-smi` (Hosts without `nvidia-smi`
   can still report logged-in users and top CPU processes.)
 
+| Platform | CLI | Web GUI (`--web`) | Desktop launcher (`--icon`) |
+|----------|-----|-------------------|-----------------------------|
+| Linux | yes | yes | yes, a `.desktop` entry (GNOME/KDE/XFCE terminals) |
+| macOS | yes | yes | yes, a double-click `who-gpu.command` that opens Terminal |
+| Windows | yes, via Git Bash | yes, via Git Bash | a `who-gpu.cmd` on the Desktop that launches Git Bash |
+
+> **Help wanted:** The macOS `.command` has not yet been verified on real hardware.
+> If you try one, please report back (or open a PR) so this note can be updated.
+
 ## Install
 
 ```bash
 git clone https://github.com/lucafossen/who-gpu.git
 cd who-gpu
 ./install.sh           # installs the `who-gpu` command
-./install.sh --icon    # also adds a double-click desktop launcher
+./install.sh --icon    # also adds a desktop icon
 ```
 Uninstall with `./uninstall.sh` (add `--purge` to also drop your preferences).
 
-You can also skip the installer entirely and run `./who-gpu.sh` directly.
+You could also skip the installer entirely and run `./who-gpu.sh` directly.
 
-The desktop icon opens the web dashboard. `--icon` asks what you want and how
-often it refreshes; flags skip the questions:
-
-```bash
-./install.sh --icon --icon-mode terminal   # text report instead
-./install.sh --icon --interval 30          # dashboard, pinned to 30s
-./install.sh --default-mode web            # plain `who-gpu` opens the dashboard
-./install.sh --no-update-check             # never check for new versions
-```
-
-A plain `who-gpu` prints the text report; set `DEFAULT_MODE=web` (the flag
-above, or `who-gpu --setup`) to open the dashboard instead. Explicit flags
-always win.
-
-Answers go to `~/.config/who-gpu/config` — plain text, safe to edit. Re-running
-the installer keeps your choices.
-
-### Platform support
-
-| Platform | CLI | Web GUI (`--web`) | Desktop launcher (`--icon`) |
-|----------|-----|-------------------|-----------------------------|
-| Linux | yes | yes | yes, a `.desktop` entry (GNOME/KDE/XFCE terminals) |
-| macOS | yes | yes | yes, a double-click `who-gpu.command` that opens Terminal |
-| Windows | yes, via Git Bash | yes | a `who-gpu.cmd` on the Desktop that launches Git Bash |
-
-Everything needs only `bash` and `ssh` — the web GUI adds no dependencies, so it
-runs wherever the CLI does. Native Windows (cmd/PowerShell) has no bash, so
-**run the installer from Git Bash** (or use WSL).
-
-> **Help wanted:** the Linux CLI and desktop icon are tested in daily use. The
-> macOS `.command` and Windows `.cmd` versions are best-effort and have not yet
-> been verified on real hardware. If you try one, please report back (or open a
-> PR) so this note can be updated.
+Your install options are saved at `~/.config/who-gpu/config` in plain text, and is safe to edit. Re-running
+the installer lets you choose again.
 
 ## Updating
 
@@ -77,32 +55,8 @@ runs wherever the CLI does. Native Windows (cmd/PowerShell) has no bash, so
 who-gpu --update
 ```
 
-Every platform, Windows included, and you never re-run the installer by hand:
-the install links into your clone, so one update refreshes the command and the
-desktop icon together. If `install.sh` itself changed, `--update` re-runs it.
-`who-gpu --version` shows what you're on; a zip download is told to clone
-instead.
-
-The installer also puts `~/.local/bin` on your `PATH`, which Git Bash omits, by
-appending one line to your shell profile after backing it up (`--no-path`
-skips it).
-
-New versions are mentioned once a day, in the terminal and as a dashboard badge.
-who-gpu never updates itself; `UPDATE_CHECK=0` silences it.
-
-### Upgrading from before v1.1
-
-`--update` didn't exist then, so it can't deliver itself — you'll just get
-`unknown option`, and old installs never report being behind. Once, by hand:
-
-```bash
-cd /path/to/who-gpu
-git pull
-./install.sh
-```
-
-After that `--update` handles everything. Your desktop icon will start opening
-the web dashboard, which is the new default.
+New versions are mentioned once a day, in the terminal and as a dashboard badge. Disable by setting `UPDATE_CHECK=0`.
+who-gpu never updates itself.
 
 ## Setup
 
@@ -125,34 +79,24 @@ who-gpu --web
 ```
 
 Opens a dashboard in your browser straight away and fills it in as each machine
-answers, then keeps it current until Ctrl-C. Machines are grouped **Available**
+answers, then keeps running until Ctrl-C. Machines are grouped **Available**
 / **In use** / **Unreachable** (plus **Probing** while results are still coming
-in); click one for the full breakdown. All the usual flags still work
-(`who-gpu --web -f myhosts.txt`).
+in); click one for a full breakdown.
 
-No server, no dependencies: the page is a file on disk that the probe loop
-rewrites, which is why it works everywhere the CLI does. The page always shows
-how old its data is and flags it loudly if the loop stops.
-
-To probe right away instead of waiting for the next refresh, press **Enter**
-in the who-gpu terminal or click **Probe now** in the page. The button works by
-reading a marker file the loop watches for access; on filesystems that don't
-record access times (`noatime`, most Windows volumes) it greys itself out.
+Serverless and dependency-free: the webpage and data is just a file on disk that the probe loop
+rewrites, which is why it works everywhere the CLI does.
 
 Files live in `~/who-gpu-web/` and stay there after you quit, so you can reopen
-the last probe (clearly marked stale). Not `~/.cache`, because snap- and
-flatpak-confined browsers can't read dot-directories under `$HOME`.
+the last probe (clearly marked stale).
 
 ### Connection reuse
 
 `--web` reuses one SSH connection per host (`ControlMaster`) instead of logging
-in on every refresh. Where that isn't supported — **notably Git Bash** — it falls
-back to a login per refresh and slows the refresh to 60s, unless you pinned an
+in on every refresh. Where that isn't supported (**notably Git Bash**) it falls
+back to a full login per refresh and slows the refresh to 60s, unless you pinned an
 interval (`WHO_GPU_INTERVAL`, `--interval`, or `INTERVAL=` in your config).
 
-`WHO_GPU_NO_MUX=1` disables reuse.
-
-## Telling it which hosts to probe
+## Managing which hosts to probe
 
 By default who-gpu reads your `~/.ssh/config` and probes every host tagged with
 a `#probe` comment.
@@ -164,7 +108,7 @@ a `#probe` comment.
        User alice
        #probe
    ```
-   Then just run `who-gpu`. (Or let `who-gpu --setup` add these for you.)
+   I recommend letting `who-gpu --setup` add these for you.
 
 2. **On the command line** (you can use bash brace-expansion):
    ```bash
@@ -211,7 +155,7 @@ default `~/who-gpu-web`), `WHO_GPU_INTERVAL` (seconds between `--web` probe
 cycles; unset means 10, or 60 when SSH connections can't be reused),
 `WHO_GPU_NO_MUX` (set to `1` to disable `--web` SSH connection reuse).
 
-`--json` dumps the same fleet data as JSON for scripting; it's what `--web` is
+`--json` dumps the same data as JSON for scripting; it's what `--web` is
 built on.
 
 ## What it reports
@@ -225,7 +169,7 @@ built on.
   busy/total GPUs, GPU users, per-GPU utilization bars, and the full breakdown
   on click.
 
-## Notes & caveats
+## Other notes
 
 - Uses `ssh -o BatchMode=yes`. Hosts without working key auth show up as failed.
 - Probes run in parallel, so one dead host won't hold up the rest.

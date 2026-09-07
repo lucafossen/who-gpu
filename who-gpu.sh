@@ -57,7 +57,10 @@ MODE_FLAGS=""           # which output mode flags were given (to reject combinat
 # --web writes into a NON-HIDDEN directory on purpose. Snap- and flatpak-confined
 # browsers (Ubuntu's default Chromium/Firefox) cannot read dotfile directories
 # under $HOME, so a tidy ~/.cache/who-gpu would silently fail to open for them.
-WEB_OUT="${WHO_GPU_OUT:-$HOME/who-gpu-web}"
+# Generated files go under the XDG data dir, next to the config and cache
+# dirs the script already uses, so nothing appears in the home folder itself.
+WEB_OUT="${WHO_GPU_OUT:-${XDG_DATA_HOME:-$HOME/.local/share}/who-gpu}"
+LEGACY_WEB_OUT="$HOME/who-gpu-web"    # the old default; moved on first --web
 WEB_INTERVAL=10                # seconds between probe cycles
 WEB_INTERVAL_NO_MUX=60         # gentler default when connections can't be reused
 INTERVAL_PINNED=0              # 1 = the user chose a value; never override it
@@ -1654,6 +1657,12 @@ open_browser() {
 }
 
 run_web() {
+  # One-time move of the old default location, so upgrading does not leave a
+  # stray folder in the home directory. Only if it is clearly ours.
+  if [[ -z "${WHO_GPU_OUT:-}" && ! -e "$WEB_OUT" && -f "$LEGACY_WEB_OUT/fleet.html" ]]; then
+    mkdir -p "$(dirname "$WEB_OUT")" && mv "$LEGACY_WEB_OUT" "$WEB_OUT" \
+      && echo "who-gpu: moved dashboard files from $LEGACY_WEB_OUT to $WEB_OUT"
+  fi
   mkdir -p "$WEB_OUT" || { echo "who-gpu: cannot create $WEB_OUT" >&2; exit 1; }
   WEB_TMP=$(mktemp -d 2>/dev/null || mktemp -d -t who-gpu) || {
     echo "who-gpu: cannot create a temp directory" >&2; exit 1; }

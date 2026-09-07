@@ -88,8 +88,9 @@ the choice is remembered by the browser.
 Serverless and dependency-free: the webpage and data is just a file on disk that the probe loop
 rewrites, which is why it works everywhere the CLI does.
 
-Files live in `~/who-gpu-web/` and stay there after you quit, so you can reopen
-the last probe (clearly marked stale).
+Files live in `~/.local/share/who-gpu/` (or `$XDG_DATA_HOME/who-gpu/`) and
+stay there after you quit, so you can reopen the last probe (clearly marked
+stale).
 
 ### Connection reuse
 
@@ -153,7 +154,7 @@ of them can be given at a time.
 
 Environment overrides: `WHO_GPU_HOSTS` (fallback hosts file path),
 `WHO_GPU_SSH_CONFIG` (ssh config path), `WHO_GPU_OUT` (where `--web` writes,
-default `~/who-gpu-web`), `WHO_GPU_INTERVAL` (seconds between `--web` probe
+default `~/.local/share/who-gpu`), `WHO_GPU_INTERVAL` (seconds between `--web` probe
 cycles; unset means 10, or 60 when SSH connections can't be reused),
 `WHO_GPU_NO_MUX` (set to `1` to disable `--web` SSH connection reuse).
 

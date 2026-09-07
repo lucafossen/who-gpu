@@ -82,7 +82,8 @@ Opens a dashboard in your browser straight away and fills it in as each machine
 answers, then keeps running until Ctrl-C. Machines are grouped **Available**
 / **In use** / **Unreachable** (plus **Probing** while results are still coming
 in); click one for a full breakdown, with a tab showing plain `nvidia-smi`
-output.
+output. **List view** in the top bar swaps the cards for one row per machine;
+the choice is remembered by the browser.
 
 Serverless and dependency-free: the webpage and data is just a file on disk that the probe loop
 rewrites, which is why it works everywhere the CLI does.

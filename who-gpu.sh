@@ -985,6 +985,31 @@ write_shell_html() {
     .detail pre { animation: none; }
   }
   .empty { color: #9a9a9a; font-size: 14px; }
+
+  /* List view: the same cards restyled as one row per host. Each row is a
+     grid with one shared column template, so rows line up; the card and its
+     two halves become display:contents so their children are the grid items.
+     The GPU bars share a fixed-width column, and the detail pane spans the
+     row underneath. Everything else (expand, tabs, filter, sort) is untouched. */
+  body.list .cards-container { flex-direction: column; gap: 4px; }
+  body.list .card-wrap {
+    display: grid; align-items: center; gap: 0 14px; padding: 8px 14px;
+    grid-template-columns: minmax(150px, 1.3fr) 56px minmax(130px, 1.5fr) repeat(4, minmax(80px, 1fr)) 160px;
+    flex: 0 0 auto; width: 100%; max-width: none; min-width: 0; border-radius: 4px;
+  }
+  body.list .card, body.list .card .left, body.list .card .right { display: contents; }
+  body.list .card .left h1 { margin: 0; font-size: 14px; }
+  body.list .percent { margin: 0; }
+  body.list .percent span, body.list .card-wrap.down .percent span { font-size: 18px; }
+  body.list .percentsymbol { font-size: 12px; }
+  body.list .sublabel { display: none; }
+  body.list .procuser { margin: 0; font-size: 12px; }
+  body.list .stat { margin: 0; }
+  body.list .stat p { font-size: 12px; }
+  body.list .gpubars { display: flex; gap: 3px; padding: 0; }
+  body.list .gpubar { flex: 1; margin: 0; gap: 0; }
+  body.list .gpubar .idx, body.list .gpubar .pct { display: none; }
+  body.list .detail-wrap { grid-column: 1 / -1; margin: 8px -14px -8px; }
 </style>
 </head>
 <body>
@@ -998,6 +1023,7 @@ write_shell_html() {
       <option value="busiest">Sort: busiest first</option>
       <option value="freest">Sort: freest first</option>
     </select>
+    <button id="view" type="button" title="Switch between cards and one row per machine">List view</button>
     <button id="probe" type="button" title="Ask who-gpu to probe the fleet right now">Probe now</button>
     <button id="pause" type="button">Pause</button>
     <span id="status">loading&hellip;</span>
@@ -1035,6 +1061,7 @@ write_shell_html() {
   var expanded = {};          // host name -> detail pane open?
   var tabOf = {};             // host name -> "full" | "smi"
   var lastTab = "full";       // the tab picked most recently; new panes open on it
+  var view = "cards";         // "cards" | "list"; remembered per browser
   var paused = false;
   var pollTimer = null;
   var probeAsked = 0;         // when "Probe now" was clicked; 0 = no request open
@@ -1234,6 +1261,7 @@ write_shell_html() {
       r.bars.textContent = "";
       h.gpus.forEach(function (g) {
         var row = el("div", "gpubar");
+        row.title = "GPU" + g.index + (g.name ? " " + g.name : "") + " · " + (g.util < 0 ? "util unknown" : g.util + "% util");
         row.appendChild(el("span", "idx", "GPU" + g.index));
         var track = el("div", "track");
         var fill = el("div", "fill");
@@ -1274,7 +1302,7 @@ write_shell_html() {
     // The table is wider than a card. While it is on show, let this card grow
     // to fit it (measured once, on opening, while the card is still its normal
     // width); otherwise the pane just scrolls sideways.
-    var wide = tab === "smi" && r.detailWrap.classList.contains("open");
+    var wide = tab === "smi" && r.detailWrap.classList.contains("open") && view !== "list";
     if (wide && !r.wrap.style.maxWidth) {
       var need = r.panes.smi.scrollWidth + 18;
       if (need > r.wrap.offsetWidth) r.wrap.style.maxWidth = r.wrap.style.flexBasis = need + "px";
@@ -1379,6 +1407,21 @@ write_shell_html() {
   }
 
   // --- controls -----------------------------------------------------------
+  // localStorage is per browser and may be unavailable (private windows,
+  // some file:// setups); the view simply defaults to cards then.
+  function applyView() {
+    document.body.classList.toggle("list", view === "list");
+    $("view").textContent = view === "list" ? "Card view" : "List view";
+    render();
+  }
+  try { view = localStorage.getItem("whoGpuView") === "list" ? "list" : "cards"; } catch (e) {}
+  applyView();
+  $("view").addEventListener("click", function () {
+    view = view === "list" ? "cards" : "list";
+    try { localStorage.setItem("whoGpuView", view); } catch (e) {}
+    applyView();
+  });
+
   $("probe").addEventListener("click", askProbe);
   $("filter").addEventListener("input", render);
   $("sort").addEventListener("change", render);

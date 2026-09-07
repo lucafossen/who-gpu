@@ -895,11 +895,12 @@ write_shell_html() {
   .summary strong { color: #ffffff; font-size: 17px; }
 
   .systems-container { margin-bottom: 28px; }
-  .systems-container h2 {
+  .sechead { border-bottom: 1px solid #555; margin: 0 0 12px; padding-bottom: 6px; }
+  .sechead h2 {
     font-size: 15px; font-weight: 600; text-transform: uppercase;
-    letter-spacing: .8px; color: #bdbdbd; margin: 0 0 12px;
-    border-bottom: 1px solid #555; padding-bottom: 6px;
+    letter-spacing: .8px; color: #bdbdbd; margin: 0;
   }
+  .sechead .col { display: none; }    /* column labels: list view only */
   .cards-container { display: flex; flex-wrap: wrap; gap: 14px; }
 
   /* The whole card is the wrapper: header row + GPU bars + detail pane share
@@ -994,12 +995,24 @@ write_shell_html() {
      two halves become display:contents so their children are the grid items.
      The GPU bars share a fixed-width column, and the detail pane spans the
      row underneath. Everything else (expand, tabs, filter, sort) is untouched. */
+  body.list { --cols: minmax(150px, 1.3fr) 76px minmax(130px, 1.5fr) repeat(4, minmax(80px, 1fr)) 160px; }
   body.list .cards-container { flex-direction: column; gap: 4px; }
   body.list .card-wrap {
     display: grid; align-items: center; gap: 0 14px; padding: 8px 14px;
-    grid-template-columns: minmax(150px, 1.3fr) 56px minmax(130px, 1.5fr) repeat(4, minmax(80px, 1fr)) 160px;
+    grid-template-columns: var(--cols);
     flex: 0 0 auto; width: 100%; max-width: none; min-width: 0; border-radius: 4px;
   }
+  /* The section heading doubles as the header row: the group name sits in
+     the machine column, the column labels follow. 19px = row border + padding. */
+  body.list .sechead {
+    display: grid; grid-template-columns: var(--cols); gap: 0 14px;
+    align-items: end; padding: 0 14px 6px 19px; margin-bottom: 6px;
+  }
+  body.list .sechead .col {
+    display: block; font-size: 10px; font-weight: 600; text-transform: uppercase;
+    letter-spacing: .6px; color: #a0a0a0;
+  }
+  body.list .stat h3 { display: none; }
   body.list .card, body.list .card .left, body.list .card .right { display: contents; }
   body.list .card .left h1 { margin: 0; font-size: 14px; }
   body.list .percent { margin: 0; }
@@ -1026,6 +1039,10 @@ write_shell_html() {
       <option value="busiest">Sort: busiest first</option>
       <option value="freest">Sort: freest first</option>
     </select>
+    <select id="group">
+      <option value="status">Group: by status</option>
+      <option value="none">Group: none</option>
+    </select>
     <button id="view" type="button" title="Switch between cards and one row per machine">List view</button>
     <button id="probe" type="button" title="Ask who-gpu to probe the fleet right now">Probe now</button>
     <button id="pause" type="button">Pause</button>
@@ -1038,16 +1055,24 @@ write_shell_html() {
   <div class="summary" id="summary">Waiting for the first probe&hellip;</div>
 
   <div class="systems-container" id="sec-free" hidden>
-    <h2>Available</h2><div class="cards-container" id="cards-free"></div>
+    <div class="sechead"><h2>Available</h2><span class="col">GPUs busy</span><span class="col">GPU users</span><span class="col">Status</span><span class="col">Peak util</span><span class="col">Memory</span><span class="col">Logged in</span><span class="col">Util per GPU</span></div>
+    <div class="cards-container" id="cards-free"></div>
   </div>
   <div class="systems-container" id="sec-busy" hidden>
-    <h2>In use</h2><div class="cards-container" id="cards-busy"></div>
+    <div class="sechead"><h2>In use</h2><span class="col">GPUs busy</span><span class="col">GPU users</span><span class="col">Status</span><span class="col">Peak util</span><span class="col">Memory</span><span class="col">Logged in</span><span class="col">Util per GPU</span></div>
+    <div class="cards-container" id="cards-busy"></div>
   </div>
   <div class="systems-container" id="sec-probing" hidden>
-    <h2>Probing</h2><div class="cards-container" id="cards-probing"></div>
+    <div class="sechead"><h2>Probing</h2><span class="col">GPUs busy</span><span class="col">GPU users</span><span class="col">Status</span><span class="col">Peak util</span><span class="col">Memory</span><span class="col">Logged in</span><span class="col">Util per GPU</span></div>
+    <div class="cards-container" id="cards-probing"></div>
   </div>
   <div class="systems-container" id="sec-down" hidden>
-    <h2>Unreachable</h2><div class="cards-container" id="cards-down"></div>
+    <div class="sechead"><h2>Unreachable</h2><span class="col">GPUs busy</span><span class="col">GPU users</span><span class="col">Status</span><span class="col">Peak util</span><span class="col">Memory</span><span class="col">Logged in</span><span class="col">Util per GPU</span></div>
+    <div class="cards-container" id="cards-down"></div>
+  </div>
+  <div class="systems-container" id="sec-all" hidden>
+    <div class="sechead"><h2>Machines</h2><span class="col">GPUs busy</span><span class="col">GPU users</span><span class="col">Status</span><span class="col">Peak util</span><span class="col">Memory</span><span class="col">Logged in</span><span class="col">Util per GPU</span></div>
+    <div class="cards-container" id="cards-all"></div>
   </div>
   <div class="systems-container" id="sec-none" hidden>
     <p class="empty">No machines match that filter.</p>
@@ -1065,6 +1090,7 @@ write_shell_html() {
   var tabOf = {};             // host name -> "full" | "smi"
   var lastTab = "full";       // the tab picked most recently; new panes open on it
   var view = "cards";         // "cards" | "list"; remembered per browser
+  var grouping = "status";    // "status" | "none"; remembered per browser
   var paused = false;
   var pollTimer = null;
   var probeAsked = 0;         // when "Probe now" was clicked; 0 = no request open
@@ -1333,15 +1359,16 @@ write_shell_html() {
       return a.name.localeCompare(b.name);
     });
 
-    var buckets = { free: [], busy: [], probing: [], down: [] };
+    var buckets = { free: [], busy: [], probing: [], down: [], all: [] };
     shown.forEach(function (h) {
       var c = classFor(h);
-      if (c === "down" || c === "probing") buckets[c].push(h);
+      if (grouping === "none") buckets.all.push(h);
+      else if (c === "down" || c === "probing") buckets[c].push(h);
       else if (c === "free") buckets.free.push(h);
       else buckets.busy.push(h);
     });
 
-    ["free", "busy", "probing", "down"].forEach(function (key) {
+    ["free", "busy", "probing", "down", "all"].forEach(function (key) {
       var container = $("cards-" + key);
       var list = buckets[key];
       list.forEach(function (h, i) {
@@ -1417,12 +1444,21 @@ write_shell_html() {
     $("view").textContent = view === "list" ? "Card view" : "List view";
     render();
   }
-  try { view = localStorage.getItem("whoGpuView") === "list" ? "list" : "cards"; } catch (e) {}
+  try {
+    view = localStorage.getItem("whoGpuView") === "list" ? "list" : "cards";
+    grouping = localStorage.getItem("whoGpuGroup") === "none" ? "none" : "status";
+  } catch (e) {}
+  $("group").value = grouping;
   applyView();
   $("view").addEventListener("click", function () {
     view = view === "list" ? "cards" : "list";
     try { localStorage.setItem("whoGpuView", view); } catch (e) {}
     applyView();
+  });
+  $("group").addEventListener("change", function () {
+    grouping = this.value === "none" ? "none" : "status";
+    try { localStorage.setItem("whoGpuGroup", grouping); } catch (e) {}
+    render();
   });
 
   $("probe").addEventListener("click", askProbe);

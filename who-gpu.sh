@@ -599,6 +599,15 @@ if command -v nvidia-smi >/dev/null 2>&1; then
   | awk -F', *' 'NF>=5 {printf "__GPU__|%s|%s|%s|%s|%s\n",$1,$2,$3,$4,$5}'
 fi
 
+# Plain `nvidia-smi` for the dashboard's second tab: the table people already
+# know how to read. Only emitted when asked (--web / --json), so the terminal
+# modes pay nothing for it. Fenced so the local side can lift it out.
+if [ "${WANT_SMI:-0}" = "1" ] && command -v nvidia-smi >/dev/null 2>&1; then
+  echo "__SMI_BEGIN__"
+  nvidia-smi 2>/dev/null
+  echo "__SMI_END__"
+fi
+
 # Machine-readable one-liner consumed by the local --summary mode.
 # Format: __SUMMARY__|busy_gpus|total_gpus|gpu_users|logged_in_users
 if command -v nvidia-smi >/dev/null 2>&1; then
@@ -637,7 +646,7 @@ ssh_probe_raw() {
   fi
 
   local out
-  out=$(ssh "$@" "$target" "TOP_N=$TOP_N; $REMOTE" 2>&1)
+  out=$(ssh "$@" "$target" "TOP_N=$TOP_N; WANT_SMI=${WANT_SMI:-0}; $REMOTE" 2>&1)
   local rc=$?
   out="${out//$'\r'/}"   # strip CRs; proxied ssh errors carry \r and mangle the line
   printf '%s' "$out"
@@ -716,9 +725,9 @@ json_words_array() {
 # other hosts are still being probed.
 probe_json_one() {
   local idx="$1" host="$2"
-  local out rc line busy total gu li gpus detail err
+  local out rc line busy total gu li gpus detail smi err
 
-  out=$(ssh_probe_raw "$host"); rc=$?
+  out=$(WANT_SMI=1 ssh_probe_raw "$host"); rc=$?
 
   if [[ $rc -ne 0 ]]; then
     err=$(printf '%s\n' "$out" | head -n1)
@@ -726,7 +735,7 @@ probe_json_one() {
       printf '{"name":%s,'    "$(printf '%s' "$host" | json_str)"
       printf '"reachable":false,"error":%s,' "$(printf '%s' "$err" | json_str)"
       printf '"busy":0,"total":0,"gpu_users":[],"logged_in":[],"gpus":[],'
-      printf '"detail":%s}'   "$(printf '%s' "$out" | json_str)"
+      printf '"detail":%s,"smi":""}' "$(printf '%s' "$out" | json_str)"
     } > "$WEB_TMP/$idx.json.tmp"
     mv -f "$WEB_TMP/$idx.json.tmp" "$WEB_TMP/$idx.json"
     return
@@ -750,7 +759,12 @@ probe_json_one() {
              $2 + 0, name, u, mu, mt
     }')
 
-  detail=$(printf '%s\n' "$out" | grep -v -e '^__SUMMARY__|' -e '^__GPU__|')
+  # The fenced nvidia-smi table is its own field; everything else stays the
+  # human-readable breakdown, exactly as --full prints it.
+  smi=$(printf '%s\n' "$out" | awk '/^__SMI_END__$/ {p=0} p {print} /^__SMI_BEGIN__$/ {p=1}')
+  detail=$(printf '%s\n' "$out" \
+           | awk '/^__SMI_BEGIN__$/ {p=1; next} /^__SMI_END__$/ {p=0; next} !p {print}' \
+           | grep -v -e '^__SUMMARY__|' -e '^__GPU__|')
 
   {
     printf '{"name":%s,'  "$(printf '%s' "$host" | json_str)"
@@ -759,7 +773,8 @@ probe_json_one() {
     printf '"gpu_users":%s,'  "$(json_words_array "$gu")"
     printf '"logged_in":%s,'  "$(json_words_array "$li")"
     printf '"gpus":[%s],'     "$gpus"
-    printf '"detail":%s}'     "$(printf '%s' "$detail" | json_str)"
+    printf '"detail":%s,'     "$(printf '%s' "$detail" | json_str)"
+    printf '"smi":%s}'        "$(printf '%s' "$smi" | json_str)"
   } > "$WEB_TMP/$idx.json.tmp"
   mv -f "$WEB_TMP/$idx.json.tmp" "$WEB_TMP/$idx.json"
 }
@@ -805,7 +820,7 @@ emit_fleet_json() {
     else
       body+="{\"name\":$(printf '%s' "${hosts[$i]}" | json_str),\"probing\":true,"
       body+='"reachable":false,"error":"","busy":0,"total":0,'
-      body+='"gpu_users":[],"logged_in":[],"gpus":[],"detail":""}'
+      body+='"gpu_users":[],"logged_in":[],"gpus":[],"detail":"","smi":""}'
     fi
   done
   printf '{"ts":%s,"pending":%s,"interval":%s,"version":%s,"update":%s,"hosts":[%s]}\n' \
@@ -938,11 +953,25 @@ write_shell_html() {
   .gpubar .fill.high { background: #e5735f; }
   .gpubar .pct { flex: 0 0 38px; text-align: right; }
 
-  .detail {
-    margin: 0; padding: 12px 16px; background: #3b3b3b; border-top: 1px solid #565656;
+  /* Detail pane: a tab strip, then one <pre> per tab. */
+  .detail { background: #3b3b3b; border-top: 1px solid #565656; }
+  .tabs { display: flex; gap: 2px; padding: 8px 16px 0; }
+  .tabs button {
+    background: transparent; color: #a8a8a8; border: 1px solid transparent;
+    border-bottom: none; border-radius: 4px 4px 0 0; padding: 5px 10px;
+    font-size: 11px; font-family: inherit; text-transform: uppercase;
+    letter-spacing: .6px; cursor: pointer;
+  }
+  .tabs button:hover { color: #e6e6e6; }
+  .tabs button.active { color: #ffffff; background: #333333; border-color: #565656; }
+  .detail pre {
+    margin: 0; padding: 12px 16px;
     font-size: 12px; line-height: 1.45; white-space: pre-wrap; word-break: break-word;
     color: #d5d5d5; font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
   }
+  /* nvidia-smi's output is a wide box-drawn table: wrapping would shred it,
+     so it keeps its shape and scrolls sideways when the card is narrower. */
+  .detail pre.smi { white-space: pre; overflow-x: auto; font-size: 11px; }
   .empty { color: #9a9a9a; font-size: 14px; }
 </style>
 </head>
@@ -992,6 +1021,8 @@ write_shell_html() {
   var data = null;            // most recent payload
   var cards = {};             // host name -> DOM nodes, so updates patch in place
   var expanded = {};          // host name -> detail pane open?
+  var tabOf = {};             // host name -> "full" | "smi"
+  var lastTab = "full";       // the tab picked most recently; new panes open on it
   var paused = false;
   var pollTimer = null;
   var probeAsked = 0;         // when "Probe now" was clicked; 0 = no request open
@@ -1106,18 +1137,42 @@ write_shell_html() {
 
     card.appendChild(left); card.appendChild(right);
     var bars = el("div", "gpubars");
-    var detail = el("pre", "detail");
+
+    var detail = el("div", "detail");
     detail.hidden = true;
+    var tabs = el("div", "tabs");
+    var panes = { full: el("pre", "full"), smi: el("pre", "smi") };
+    var tabBtns = {};
+    [["full", "Details"], ["smi", "nvidia-smi"]].forEach(function (t) {
+      var b = el("button", null, t[1]);
+      b.type = "button";
+      b.addEventListener("click", function () {
+        tabOf[h.name] = lastTab = t[0];
+        showTab(refs);
+      });
+      tabBtns[t[0]] = b;
+      tabs.appendChild(b);
+    });
+    detail.appendChild(tabs);
+    detail.appendChild(panes.full);
+    detail.appendChild(panes.smi);
 
     wrap.appendChild(card); wrap.appendChild(bars); wrap.appendChild(detail);
 
-    card.addEventListener("click", function () {
+    // The whole card toggles the pane, output included. Two exceptions: the
+    // tab strip (a tab click is a tab switch), and a click that ends a text
+    // selection, since folding the output away mid-copy would be rude.
+    wrap.addEventListener("click", function (e) {
+      if (tabs.contains(e.target)) return;
+      if (String(window.getSelection && window.getSelection())) return;
       expanded[h.name] = !expanded[h.name];
-      detail.hidden = !expanded[h.name];
+      updateCard(refs.host);    // refs.host: the latest payload, not the one this card was built from
     });
 
     var refs = { wrap: wrap, card: card, title: title, big: big, sup: sup,
-                 sub: sub, users: users, stats: stats, bars: bars, detail: detail };
+                 sub: sub, users: users, stats: stats, bars: bars,
+                 detail: detail, tabs: tabs, tabBtns: tabBtns, panes: panes,
+                 host: h };
     cards[h.name] = refs;
     return refs;
   }
@@ -1180,11 +1235,38 @@ write_shell_html() {
       });
     }
 
-    var det = h.detail || "";
-    if (r.detail.textContent !== det) r.detail.textContent = det;
-    r.detail.hidden = !expanded[h.name] || !det;
+    r.host = h;
+    var det = h.detail || "", smi = h.smi || "";
+    if (r.panes.full.textContent !== det) r.panes.full.textContent = det;
+    if (r.panes.smi.textContent !== smi) r.panes.smi.textContent = smi;
+    r.detail.hidden = !expanded[h.name] || !(det || smi);
+    showTab(r);
 
     return r;
+  }
+
+  // Which tab a pane shows. Hosts with no nvidia-smi output (unreachable, no
+  // driver) get no tab strip at all, just the breakdown as before.
+  function showTab(r) {
+    var h = r.host, hasSmi = !!(h.smi);
+    var tab = hasSmi ? (tabOf[h.name] || lastTab) : "full";
+    r.tabs.hidden = !hasSmi;
+    r.panes.full.hidden = tab !== "full";
+    r.panes.smi.hidden = tab !== "smi";
+    Object.keys(r.tabBtns).forEach(function (k) {
+      var b = r.tabBtns[k], on = k === tab;
+      if (b.classList.contains("active") !== on) b.classList.toggle("active", on);
+    });
+    // The table is wider than a card. While it is on show, let this card grow
+    // to fit it (measured once, on opening, while the card is still its normal
+    // width); otherwise the pane just scrolls sideways.
+    var wide = tab === "smi" && !r.detail.hidden;
+    if (wide && !r.wrap.style.maxWidth) {
+      var need = r.panes.smi.scrollWidth + 18;
+      if (need > r.wrap.offsetWidth) r.wrap.style.maxWidth = r.wrap.style.flexBasis = need + "px";
+    } else if (!wide && r.wrap.style.maxWidth) {
+      r.wrap.style.maxWidth = r.wrap.style.flexBasis = "";
+    }
   }
 
   // --- rendering ----------------------------------------------------------

@@ -81,7 +81,8 @@ who-gpu --web
 Opens a dashboard in your browser straight away and fills it in as each machine
 answers, then keeps running until Ctrl-C. Machines are grouped **Available**
 / **In use** / **Unreachable** (plus **Probing** while results are still coming
-in); click one for a full breakdown.
+in); click one for a full breakdown, with a tab showing plain `nvidia-smi`
+output.
 
 Serverless and dependency-free: the webpage and data is just a file on disk that the probe loop
 rewrites, which is why it works everywhere the CLI does.
@@ -166,8 +167,8 @@ built on.
   utilization and memory, each GPU process mapped to its owning username, and
   the top CPU processes.
 - **Web GUI (`--web`):** one card per machine, grouped by availability, with
-  busy/total GPUs, GPU users, per-GPU utilization bars, and the full breakdown
-  on click.
+  busy/total GPUs, GPU users, per-GPU utilization bars, and on click the full
+  breakdown plus the plain `nvidia-smi` table.
 
 ## Other notes
 

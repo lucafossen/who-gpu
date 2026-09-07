@@ -906,7 +906,8 @@ write_shell_html() {
     display: flex; flex-direction: column;
     min-width: 340px; flex: 1 1 340px; max-width: 520px;
     background: #545454; border-radius: 6px; border-left: 5px solid #777;
-    overflow: hidden; cursor: pointer; transition: background .12s;
+    overflow: hidden; cursor: pointer;
+    transition: background .12s, max-width .25s ease, flex-basis .25s ease;
   }
   .card-wrap:hover { background: #5c5c5c; }
   .card-wrap.free    { border-left-color: #6fcf6f; }
@@ -953,14 +954,18 @@ write_shell_html() {
   .gpubar .fill.high { background: #e5735f; }
   .gpubar .pct { flex: 0 0 38px; text-align: right; }
 
-  /* Detail pane: a tab strip, then one <pre> per tab. */
-  .detail { background: #3b3b3b; border-top: 1px solid #565656; }
+  /* Detail pane: a tab strip, then one <pre> per tab. It slides open by
+     animating a grid row from 0fr to 1fr, which needs no height measurement;
+     the inner box just has to be allowed to shrink below its content. */
+  .detail-wrap { display: grid; grid-template-rows: 0fr; transition: grid-template-rows .25s ease; }
+  .detail-wrap.open { grid-template-rows: 1fr; }
+  .detail { min-height: 0; overflow: hidden; background: #3b3b3b; box-shadow: inset 0 1px #565656; }
   .tabs { display: flex; gap: 2px; padding: 8px 16px 0; }
   .tabs button {
     background: transparent; color: #a8a8a8; border: 1px solid transparent;
     border-bottom: none; border-radius: 4px 4px 0 0; padding: 5px 10px;
     font-size: 11px; font-family: inherit; text-transform: uppercase;
-    letter-spacing: .6px; cursor: pointer;
+    letter-spacing: .6px; cursor: pointer; transition: color .15s, background .15s;
   }
   .tabs button:hover { color: #e6e6e6; }
   .tabs button.active { color: #ffffff; background: #333333; border-color: #565656; }
@@ -972,6 +977,13 @@ write_shell_html() {
   /* nvidia-smi's output is a wide box-drawn table: wrapping would shred it,
      so it keeps its shape and scrolls sideways when the card is narrower. */
   .detail pre.smi { white-space: pre; overflow-x: auto; font-size: 11px; }
+  /* Runs whenever a pane goes from display:none to shown, i.e. on a tab switch. */
+  .detail pre { animation: fadein .2s ease; }
+  @keyframes fadein { from { opacity: 0; } }
+  @media (prefers-reduced-motion: reduce) {
+    .card-wrap, .detail-wrap, .tabs button { transition: none; }
+    .detail pre { animation: none; }
+  }
   .empty { color: #9a9a9a; font-size: 14px; }
 </style>
 </head>
@@ -1138,8 +1150,9 @@ write_shell_html() {
     card.appendChild(left); card.appendChild(right);
     var bars = el("div", "gpubars");
 
+    var detailWrap = el("div", "detail-wrap");
     var detail = el("div", "detail");
-    detail.hidden = true;
+    detailWrap.appendChild(detail);
     var tabs = el("div", "tabs");
     var panes = { full: el("pre", "full"), smi: el("pre", "smi") };
     var tabBtns = {};
@@ -1157,7 +1170,7 @@ write_shell_html() {
     detail.appendChild(panes.full);
     detail.appendChild(panes.smi);
 
-    wrap.appendChild(card); wrap.appendChild(bars); wrap.appendChild(detail);
+    wrap.appendChild(card); wrap.appendChild(bars); wrap.appendChild(detailWrap);
 
     // The whole card toggles the pane, output included. Two exceptions: the
     // tab strip (a tab click is a tab switch), and a click that ends a text
@@ -1171,8 +1184,8 @@ write_shell_html() {
 
     var refs = { wrap: wrap, card: card, title: title, big: big, sup: sup,
                  sub: sub, users: users, stats: stats, bars: bars,
-                 detail: detail, tabs: tabs, tabBtns: tabBtns, panes: panes,
-                 host: h };
+                 detailWrap: detailWrap, detail: detail, tabs: tabs,
+                 tabBtns: tabBtns, panes: panes, host: h };
     cards[h.name] = refs;
     return refs;
   }
@@ -1239,7 +1252,8 @@ write_shell_html() {
     var det = h.detail || "", smi = h.smi || "";
     if (r.panes.full.textContent !== det) r.panes.full.textContent = det;
     if (r.panes.smi.textContent !== smi) r.panes.smi.textContent = smi;
-    r.detail.hidden = !expanded[h.name] || !(det || smi);
+    var open = !!expanded[h.name] && !!(det || smi);
+    if (r.detailWrap.classList.contains("open") !== open) r.detailWrap.classList.toggle("open", open);
     showTab(r);
 
     return r;
@@ -1260,7 +1274,7 @@ write_shell_html() {
     // The table is wider than a card. While it is on show, let this card grow
     // to fit it (measured once, on opening, while the card is still its normal
     // width); otherwise the pane just scrolls sideways.
-    var wide = tab === "smi" && !r.detail.hidden;
+    var wide = tab === "smi" && r.detailWrap.classList.contains("open");
     if (wide && !r.wrap.style.maxWidth) {
       var need = r.panes.smi.scrollWidth + 18;
       if (need > r.wrap.offsetWidth) r.wrap.style.maxWidth = r.wrap.style.flexBasis = need + "px";

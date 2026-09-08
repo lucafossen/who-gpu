@@ -939,7 +939,7 @@ write_shell_html() {
   @keyframes pulse { 50% { opacity: .35; } }
   .sublabel { font-size: 11px; text-transform: uppercase; letter-spacing: .6px; color: #a8a8a8; }
   .procuser { margin-top: 8px; font-size: 13px; color: #e6e6e6; word-break: break-word; }
-  .procuser .none { color: #909090; }
+  .procuser.none { color: #909090; }
 
   .stat { margin-bottom: 9px; }
   .stat:last-child { margin-bottom: 0; }
@@ -1272,14 +1272,14 @@ write_shell_html() {
     }
 
     var gu = joinUsers(h.gpu_users);
-    setText(r.users, gu || (h.reachable ? "nobody on the GPUs" : ""));
+    setText(r.users, gu || "\u2014");
     r.users.className = gu ? "procuser" : "procuser none";
 
     var pu = peakUtil(h), mp = memPct(h);
     setText(r.stats["Status"], statusWord(h));
     setText(r.stats["Peak util"], pu >= 0 ? pu + "%" : "—");
     setText(r.stats["Memory"], mp >= 0 ? mp + "%" : "—");
-    setText(r.stats["Logged in"], joinUsers(h.logged_in) || (h.probing ? "—" : "nobody"));
+    setText(r.stats["Logged in"], joinUsers(h.logged_in) || "\u2014");
 
     if (!h.reachable && h.error) setText(r.stats["Status"], h.error);
 

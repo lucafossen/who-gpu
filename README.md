@@ -14,7 +14,7 @@ Also includes a dependency-free web GUI:
 
 ## Why
 
-On a shared GPU one often needs to figure out which machines are free, and who's using them. This gives an insightful, easily readable overview of that.
+If you are sharing compute resources with others without a scheduling system, you often need to figure out which machines are free, and who's using them. This gives an insightful, easily readable overview of that.
 
 ## Requirements & platform support
 

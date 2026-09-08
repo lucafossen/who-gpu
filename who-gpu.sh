@@ -1030,6 +1030,11 @@ write_shell_html() {
     display: block; font-size: 10px; font-weight: 600; text-transform: uppercase;
     letter-spacing: .6px; color: #a0a0a0;
   }
+  body.list .sechead h2, body.list .sechead .col { cursor: pointer; user-select: none; }
+  body.list .sechead .col:hover, body.list .sechead h2:hover { color: #ffffff; }
+  body.list .sechead .sorted { color: #ffffff; }
+  body.list .sechead .sorted::after { content: " \25BC"; font-size: 8px; }
+  body.list .sechead .sorted.asc::after { content: " \25B2"; }
   body.list .stat h3 { display: none; }
   body.list .card, body.list .card .left, body.list .card .right { display: contents; }
   body.list .card .left h1 { margin: 0; font-size: 14px; }
@@ -1054,9 +1059,15 @@ write_shell_html() {
     <input id="filter" type="search" placeholder="Filter machines" autocomplete="off">
     <select id="sort">
       <option value="name">Sort: name</option>
-      <option value="busiest">Sort: busiest first</option>
-      <option value="freest">Sort: freest first</option>
+      <option value="busy">Sort: GPUs busy</option>
+      <option value="users">Sort: GPU users</option>
+      <option value="status">Sort: status</option>
+      <option value="peak">Sort: peak util</option>
+      <option value="memory">Sort: memory</option>
+      <option value="logged">Sort: logged in</option>
+      <option value="util">Sort: util per GPU</option>
     </select>
+    <button id="dir" type="button" title="Ascending / descending">&#9660;</button>
     <select id="group">
       <option value="status">Group: by status</option>
       <option value="none">Group: none</option>
@@ -1073,23 +1084,23 @@ write_shell_html() {
   <div class="summary" id="summary">Waiting for the first probe&hellip;</div>
 
   <div class="systems-container" id="sec-free" hidden>
-    <div class="sechead"><h2>Available</h2><span class="col">GPUs busy</span><span class="col">GPU users</span><span class="col">Status</span><span class="col">Peak util</span><span class="col">Memory</span><span class="col">Logged in</span><span class="col">Util per GPU</span></div>
+    <div class="sechead"><h2 data-key="name" title="Sort by machine name">Available</h2><span class="col" data-key="busy">GPUs busy</span><span class="col" data-key="users">GPU users</span><span class="col" data-key="status">Status</span><span class="col" data-key="peak">Peak util</span><span class="col" data-key="memory">Memory</span><span class="col" data-key="logged">Logged in</span><span class="col" data-key="util">Util per GPU</span></div>
     <div class="cards-container" id="cards-free"></div>
   </div>
   <div class="systems-container" id="sec-busy" hidden>
-    <div class="sechead"><h2>In use</h2><span class="col">GPUs busy</span><span class="col">GPU users</span><span class="col">Status</span><span class="col">Peak util</span><span class="col">Memory</span><span class="col">Logged in</span><span class="col">Util per GPU</span></div>
+    <div class="sechead"><h2 data-key="name" title="Sort by machine name">In use</h2><span class="col" data-key="busy">GPUs busy</span><span class="col" data-key="users">GPU users</span><span class="col" data-key="status">Status</span><span class="col" data-key="peak">Peak util</span><span class="col" data-key="memory">Memory</span><span class="col" data-key="logged">Logged in</span><span class="col" data-key="util">Util per GPU</span></div>
     <div class="cards-container" id="cards-busy"></div>
   </div>
   <div class="systems-container" id="sec-probing" hidden>
-    <div class="sechead"><h2>Probing</h2><span class="col">GPUs busy</span><span class="col">GPU users</span><span class="col">Status</span><span class="col">Peak util</span><span class="col">Memory</span><span class="col">Logged in</span><span class="col">Util per GPU</span></div>
+    <div class="sechead"><h2 data-key="name" title="Sort by machine name">Probing</h2><span class="col" data-key="busy">GPUs busy</span><span class="col" data-key="users">GPU users</span><span class="col" data-key="status">Status</span><span class="col" data-key="peak">Peak util</span><span class="col" data-key="memory">Memory</span><span class="col" data-key="logged">Logged in</span><span class="col" data-key="util">Util per GPU</span></div>
     <div class="cards-container" id="cards-probing"></div>
   </div>
   <div class="systems-container" id="sec-down" hidden>
-    <div class="sechead"><h2>Unreachable</h2><span class="col">GPUs busy</span><span class="col">GPU users</span><span class="col">Status</span><span class="col">Peak util</span><span class="col">Memory</span><span class="col">Logged in</span><span class="col">Util per GPU</span></div>
+    <div class="sechead"><h2 data-key="name" title="Sort by machine name">Unreachable</h2><span class="col" data-key="busy">GPUs busy</span><span class="col" data-key="users">GPU users</span><span class="col" data-key="status">Status</span><span class="col" data-key="peak">Peak util</span><span class="col" data-key="memory">Memory</span><span class="col" data-key="logged">Logged in</span><span class="col" data-key="util">Util per GPU</span></div>
     <div class="cards-container" id="cards-down"></div>
   </div>
   <div class="systems-container" id="sec-all" hidden>
-    <div class="sechead"><h2>Machines</h2><span class="col">GPUs busy</span><span class="col">GPU users</span><span class="col">Status</span><span class="col">Peak util</span><span class="col">Memory</span><span class="col">Logged in</span><span class="col">Util per GPU</span></div>
+    <div class="sechead"><h2 data-key="name" title="Sort by machine name">Machines</h2><span class="col" data-key="busy">GPUs busy</span><span class="col" data-key="users">GPU users</span><span class="col" data-key="status">Status</span><span class="col" data-key="peak">Peak util</span><span class="col" data-key="memory">Memory</span><span class="col" data-key="logged">Logged in</span><span class="col" data-key="util">Util per GPU</span></div>
     <div class="cards-container" id="cards-all"></div>
   </div>
   <div class="systems-container" id="sec-none" hidden>
@@ -1110,6 +1121,8 @@ write_shell_html() {
   var lastTab = "full";       // the tab picked most recently; new panes open on it
   var view = "cards";         // "cards" | "list"; remembered per browser
   var grouping = "status";    // "status" | "none"; remembered per browser
+  var sortKey = "name";       // a column; see sortValue()
+  var sortDir = "asc";        // "asc" | "desc"
   var paused = false;
   var pollTimer = null;
   var probeAsked = 0;         // when "Probe now" was clicked; 0 = no request open
@@ -1195,7 +1208,48 @@ write_shell_html() {
     }
     return total > 0 ? Math.round((used / total) * 100) : -1;
   }
+  function avgUtil(h) {
+    var sum = 0, n = 0, i;
+    for (i = 0; i < h.gpus.length; i++) if (h.gpus[i].util >= 0) { sum += h.gpus[i].util; n++; }
+    return n ? sum / n : -1;
+  }
   function joinUsers(list) { return list.length ? list.join("  ") : ""; }
+
+  // --- sorting ------------------------------------------------------------
+  // Hosts without data (probing, unreachable) always sink to the bottom; the
+  // rest order by the chosen column, then by name so the order is stable.
+  var STATUS_RANK = { free: 0, partial: 1, full: 2, probing: 3, down: 4 };
+  function sortValue(h) {
+    switch (sortKey) {
+      case "busy":   return h.busy;
+      case "users":  return h.gpu_users.length;
+      case "status": return STATUS_RANK[classFor(h)];
+      case "peak":   return peakUtil(h);
+      case "memory": return memPct(h);
+      case "logged": return h.logged_in.length;
+      case "util":   return avgUtil(h);
+      default:       return h.name.toLowerCase();
+    }
+  }
+  function compareHosts(a, b) {
+    var ad = a.probing || !a.reachable, bd = b.probing || !b.reachable;
+    if (ad !== bd) return ad ? 1 : -1;
+    var av = sortValue(a), bv = sortValue(b), c;
+    if (typeof av === "string") c = av.localeCompare(bv);
+    else c = av - bv;
+    if (sortDir === "desc") c = -c;
+    return c || a.name.localeCompare(b.name);
+  }
+  function setSort(key, dir) {
+    sortKey = key;
+    sortDir = dir;
+    try { localStorage.setItem("whoGpuSort", key + " " + dir); } catch (e) {}
+    $("sort").value = key;
+    $("dir").innerHTML = dir === "asc" ? "&#9650;" : "&#9660;";
+    render();
+  }
+  // Numbers read best largest first; names, smallest first.
+  function defaultDir(key) { return key === "name" ? "asc" : "desc"; }
 
   // --- card construction / patching ---------------------------------------
   function buildCard(h) {
@@ -1364,7 +1418,6 @@ write_shell_html() {
     if (!data) return;
 
     var q = $("filter").value.trim().toLowerCase();
-    var mode = $("sort").value;
 
     var shown = data.hosts.filter(function (h) {
       if (!q) return true;
@@ -1372,11 +1425,13 @@ write_shell_html() {
       return hay.indexOf(q) !== -1;
     });
 
-    shown.sort(function (a, b) {
-      if (mode === "busiest") return (b.busy - a.busy) || a.name.localeCompare(b.name);
-      if (mode === "freest") return ((a.busy - a.total) - (b.busy - b.total)) || a.name.localeCompare(b.name);
-      return a.name.localeCompare(b.name);
-    });
+    shown.sort(compareHosts);
+
+    var heads = document.querySelectorAll(".sechead [data-key]"), i, on;
+    for (i = 0; i < heads.length; i++) {
+      on = heads[i].dataset.key === sortKey;
+      heads[i].className = heads[i].className.replace(/ ?\b(sorted|asc)\b/g, "") + (on ? " sorted" + (sortDir === "asc" ? " asc" : "") : "");
+    }
 
     var buckets = { free: [], busy: [], probing: [], down: [], all: [] };
     shown.forEach(function (h) {
@@ -1483,7 +1538,23 @@ write_shell_html() {
 
   $("probe").addEventListener("click", askProbe);
   $("filter").addEventListener("input", render);
-  $("sort").addEventListener("change", render);
+  try {
+    var saved = (localStorage.getItem("whoGpuSort") || "").split(" ");
+    if ($("sort").querySelector('option[value="' + saved[0] + '"]')) {
+      sortKey = saved[0];
+      sortDir = saved[1] === "asc" ? "asc" : "desc";
+    }
+  } catch (e) {}
+  setSort(sortKey, sortDir);
+  $("sort").addEventListener("change", function () { setSort(this.value, defaultDir(this.value)); });
+  $("dir").addEventListener("click", function () { setSort(sortKey, sortDir === "asc" ? "desc" : "asc"); });
+  // Column labels in list view: click to sort, click again to flip.
+  document.addEventListener("click", function (e) {
+    var t = e.target.closest ? e.target.closest(".sechead [data-key]") : null;
+    if (!t) return;
+    var key = t.dataset.key;
+    setSort(key, key === sortKey ? (sortDir === "asc" ? "desc" : "asc") : defaultDir(key));
+  });
   $("pause").addEventListener("click", function () {
     paused = !paused;
     this.textContent = paused ? "Resume" : "Pause";

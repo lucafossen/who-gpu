@@ -84,7 +84,9 @@ answers, then keeps running until Ctrl-C. Machines are grouped **Available**
 in); click one for a full breakdown, with a tab showing plain `nvidia-smi`
 output. **List view** in the top bar swaps the cards for one row per machine
 under a column header, and **Group** switches between grouping by status and
-one flat list; both choices are remembered by the browser.
+one flat list. **Sort** orders machines by any column, with the arrow button
+flipping the direction; in list view, clicking a column header does the same.
+All of these choices are remembered by the browser.
 
 Serverless and dependency-free: the webpage and data is just a file on disk that the probe loop
 rewrites, which is why it works everywhere the CLI does.

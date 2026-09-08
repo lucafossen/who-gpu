@@ -82,6 +82,7 @@ DO_VERSION=0            # 1 = --version
 # .desktop / .command / .cmd launchers all read the same settings, and it can be
 # hand-edited later without re-running the installer.
 CONFIG_FILE="${WHO_GPU_CONFIG:-${XDG_CONFIG_HOME:-$HOME/.config}/who-gpu/config}"
+REPO_URL="https://github.com/lucafossen/who-gpu"
 CFG_ICON_MODE="web"     # what the desktop icon opens: web | terminal
 CFG_DEFAULT_MODE="terminal"  # what a plain `who-gpu` opens: terminal | web
 CFG_INTERVAL=""         # dashboard refresh seconds (empty = built-in default)
@@ -363,33 +364,37 @@ icon_installed() {
   return 1
 }
 
-# Is a newer version available? Prints the remote description, or nothing.
-# Cached for a day: the network round trip costs about a second and this must
-# never be something the user waits on.
+# Is a newer version available? Prints "<label> <url>", or nothing: the newest
+# release tag and its GitHub page when there is one we do not have, otherwise
+# the remote commit and the commit log. Cached for a day: the network round
+# trip costs about a second and this must never be something the user waits on.
 update_available() {
   [[ "$CFG_UPDATE_CHECK" == "1" ]] || return 1
   command -v git >/dev/null 2>&1 || return 1
-  local dir cache now last remote local_rev cached_rev
+  local dir cache now last refs remote local_rev tag tag_rev label url cached_label cached_url
   dir="$(resolve_self_dir)"
   [ -d "$dir/.git" ] || return 1
 
-  # Cache holds "<checked-at> <rev-or-empty>". The RESULT has to be cached too,
-  # not just the timestamp -- otherwise a found update would vanish again for a
-  # day on the very next call.
+  # Cache holds "<checked-at> <label> <url>", label and url empty when up to
+  # date. The RESULT has to be cached too, not just the timestamp -- otherwise
+  # a found update would vanish again for a day on the very next call.
   cache="${XDG_CACHE_HOME:-$HOME/.cache}/who-gpu/update-check"
   mkdir -p "$(dirname "$cache")" 2>/dev/null || return 1
   now=$(date +%s)
   if [ -f "$cache" ]; then
-    read -r last cached_rev < "$cache" 2>/dev/null || true
+    read -r last cached_label cached_url < "$cache" 2>/dev/null || true
     case "$last" in ''|*[!0-9]*) last=0 ;; esac
     if [ $((now - last)) -lt 86400 ]; then
-      [ -n "${cached_rev:-}" ] || return 1
-      printf '%s' "$cached_rev"
+      [ -n "${cached_label:-}" ] || return 1
+      printf '%s %s' "$cached_label" "$cached_url"
       return 0
     fi
   fi
 
-  remote=$(git -C "$dir" ls-remote --quiet origin -h refs/heads/main 2>/dev/null | awk '{print $1}')
+  # One round trip for both the branch head and the tags, newest tag first.
+  refs=$(git -C "$dir" ls-remote --quiet --sort=-v:refname origin \
+           'refs/heads/main' 'refs/tags/v*' 2>/dev/null)
+  remote=$(printf '%s\n' "$refs" | awk '$2 == "refs/heads/main" {print $1}')
   if [ -z "$remote" ]; then
     # Offline or unreachable: remember we tried, so we do not retry every run.
     printf '%s \n' "$now" > "$cache"
@@ -401,19 +406,29 @@ update_available() {
     printf '%s \n' "$now" > "$cache"
     return 1
   fi
-  printf '%s %s\n' "$now" "${remote:0:7}" > "$cache"
-  printf '%s' "${remote:0:7}"
+
+  # Newest tag; its "^{}" line (if any) is the commit an annotated tag points at.
+  tag=$(printf '%s\n' "$refs" | awk '$2 ~ /^refs\/tags\// && $2 !~ /\^\{\}$/ {sub(/^refs\/tags\//, "", $2); print $2; exit}')
+  tag_rev=$(printf '%s\n' "$refs" | awk -v t="refs/tags/$tag" '$2 == t "^{}" {p=$1} $2 == t {r=$1} END {print (p ? p : r)}')
+  if [ -n "$tag" ] && ! git -C "$dir" merge-base --is-ancestor "$tag_rev" HEAD 2>/dev/null; then
+    label="$tag"; url="$REPO_URL/releases/tag/$tag"
+  else
+    label="${remote:0:7}"; url="$REPO_URL/commits/main"
+  fi
+  printf '%s %s %s\n' "$now" "$label" "$url" > "$cache"
+  printf '%s %s' "$label" "$url"
   return 0
 }
 
 # "Notify only": say a version exists, change nothing. Goes to stderr so that
 # piping `who-gpu` somewhere never picks up a version notice as if it were data.
 notify_update() {
-  local v
+  local v url
   v=$(update_available) || return 0
+  url="${v#* }"; v="${v%% *}"
   {
     echo
-    echo "who-gpu: a newer version is available ($v)."
+    echo "who-gpu: a newer version is available ($v): $url"
     echo "         get it with:  who-gpu --update"
   } >&2
 }
@@ -424,12 +439,12 @@ run_update() {
 
   command -v git >/dev/null 2>&1 || {
     echo "who-gpu: git is not installed, so I cannot update automatically." >&2
-    echo "         Reinstall from https://github.com/lucafossen/who-gpu" >&2
+    echo "         Reinstall from $REPO_URL" >&2
     return 1; }
   [ -d "$dir/.git" ] || {
     echo "who-gpu: $dir is not a git checkout (downloaded as a zip?)." >&2
     echo "         To get updates from now on, clone it instead:" >&2
-    echo "           git clone https://github.com/lucafossen/who-gpu.git" >&2
+    echo "           git clone $REPO_URL.git" >&2
     echo "           cd who-gpu && ./install.sh" >&2
     return 1; }
   if ! git -C "$dir" diff --quiet 2>/dev/null || ! git -C "$dir" diff --cached --quiet 2>/dev/null; then
@@ -826,10 +841,13 @@ emit_fleet_json() {
       body+='"gpu_users":[],"logged_in":[],"gpus":[],"detail":"","smi":""}'
     fi
   done
-  printf '{"ts":%s,"pending":%s,"interval":%s,"version":%s,"update":%s,"hosts":[%s]}\n' \
+  local upd
+  upd=$( { update_available || true; } )
+  printf '{"ts":%s,"pending":%s,"interval":%s,"version":%s,"update":%s,"update_url":%s,"hosts":[%s]}\n' \
     "$CYCLE_TS" "$pending" "$WEB_INTERVAL" \
     "$(version_string | json_str)" \
-    "$( { update_available || true; } | json_str)" \
+    "$(printf '%s' "${upd%% *}" | json_str)" \
+    "$(printf '%s' "${upd#* }" | json_str)" \
     "$body"
 }
 
@@ -887,8 +905,8 @@ write_shell_html() {
   #update {
     font-size: 12px; color: #2b2b2b; background: #8ade8a; text-decoration: none;
     padding: 4px 9px; border-radius: 4px; white-space: nowrap; font-weight: 600;
-    cursor: default;
   }
+  #update:hover { background: #a3e8a3; }
 
   .main-content { padding: 20px; max-width: 1600px; margin: 0 auto; }
   .summary { font-size: 15px; color: #d8d8d8; margin-bottom: 20px; }
@@ -1047,7 +1065,7 @@ write_shell_html() {
     <button id="probe" type="button" title="Ask who-gpu to probe the fleet right now">Probe now</button>
     <button id="pause" type="button">Pause</button>
     <span id="status">loading&hellip;</span>
-    <a id="update" href="#" hidden></a>
+    <a id="update" href="#" target="_blank" rel="noopener" hidden></a>
   </div>
 </div>
 
@@ -1084,6 +1102,7 @@ write_shell_html() {
   "use strict";
 
   var POLL_MS = 1000;         // how often to re-read the data file (a local read)
+  var REPO_URL = "https://github.com/lucafossen/who-gpu";
   var data = null;            // most recent payload
   var cards = {};             // host name -> DOM nodes, so updates patch in place
   var expanded = {};          // host name -> detail pane open?
@@ -1385,6 +1404,7 @@ write_shell_html() {
     var upd = $("update");
     if (data.update) {
       setText(upd, "update available (" + data.update + ") — run: who-gpu --update");
+      upd.href = data.update_url || (REPO_URL + "/commits/main");
       upd.hidden = false;
     } else {
       upd.hidden = true;

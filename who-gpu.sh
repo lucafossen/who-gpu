@@ -651,11 +651,33 @@ ssh_probe_raw() {
   local target="$host"
   [[ -n "$SSH_USER" && "$host" != *@* ]] && target="${SSH_USER}@${host}"
 
+  # Since OpenSSH 8.x ConnectTimeout also covers the banner exchange, and
+  # behind a ProxyJump/ProxyCommand that wait includes connecting to and
+  # authenticating with the proxy first, which alone can take 10s or more.
+  # Plain ssh has no timeout, so it copes; give those hosts a longer one from
+  # the start. `ssh -G` evaluates the config locally, no network involved.
+  local timeout="$CONNECT_TIMEOUT" slow=$((CONNECT_TIMEOUT * 4))
+  if ssh -G "$target" 2>/dev/null | grep -qiE '^(proxyjump|proxycommand) '; then
+    timeout="$slow"
+  fi
+
+  local out rc
+  out=$(ssh_probe_once "$target" "$timeout"); rc=$?
+  # A host that is merely slow to answer (not down) fails in one specific way.
+  # Give it one more go with the long timeout rather than calling it unreachable.
+  if [[ $rc -ne 0 && "$timeout" != "$slow" && "$out" == *"banner exchange"* ]]; then
+    out=$(ssh_probe_once "$target" "$slow"); rc=$?
+  fi
+  printf '%s' "$out"
+  return $rc
+}
+
+ssh_probe_once() {
+  local target="$1" timeout="$2"
   # Built as positional params rather than an array: bash cannot export arrays,
-  # and this function runs inside the xargs workers via `export -f`. Safe here
-  # because $host was already captured above.
+  # and this function runs inside the xargs workers via `export -f`.
   set -- -o BatchMode=yes \
-         -o ConnectTimeout="$CONNECT_TIMEOUT" \
+         -o ConnectTimeout="$timeout" \
          -o StrictHostKeyChecking=accept-new
   if [[ -n "${SSH_MUX_DIR:-}" ]]; then
     set -- "$@" -o ControlMaster=auto \
@@ -857,7 +879,7 @@ collect_fleet_json() {
   emit_fleet_json
 }
 
-export -f probe ssh_probe_raw probe_json_one json_str json_words_array
+export -f probe ssh_probe_raw ssh_probe_once probe_json_one json_str json_words_array
 export SSH_USER CONNECT_TIMEOUT TOP_N REMOTE SUMMARY SSH_MUX_DIR SSH_MUX_PERSIST
 
 # ---- --web ----------------------------------------------------------------

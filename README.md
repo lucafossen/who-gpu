@@ -148,7 +148,7 @@ change that:
 | `--no-ssh-config` | Ignore ssh config; use `-f` or the `~/.who-gpu-hosts` fallback |
 | `-f FILE`, `--file FILE` | Read hosts from FILE (one per line) |
 | `-u USER`, `--user USER` | SSH as USER (for hosts without a `user@`) |
-| `-t SECS`, `--timeout SECS` | SSH connect timeout (default 8) |
+| `-t SECS`, `--timeout SECS` | SSH connect timeout (default 8; hosts behind a jump host get four times this) |
 | `-n N`, `--top N` | How many top CPU processes to show per host (default 5) |
 | `-p N`, `--parallel N` | How many hosts to probe at once (default 6) |
 | `-h`, `--help` | Usage |

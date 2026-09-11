@@ -4,17 +4,15 @@ A small Bash tool that SSHes into a list of machines, runs
 `nvidia-smi` (and a bit of `ps`/`who`), and tells you **which machines are in
 use and by which users**.
 
-<img width="2150" height="702" alt="image" src="https://github.com/user-attachments/assets/5f091518-7f6c-4f75-9bf4-d0be66834c59" />
+<img width="2150" height="702" alt="image" src="https://github.com/user-attachments/assets/999556ac-79d5-4755-a00b-77978368e691" />
 
+Also includes a dependency-free web GUI.
 
-Also includes a dependency-free web GUI:
-[dashboard](#web-gui):
-<img width="2702" height="1632" alt="image" src="https://github.com/user-attachments/assets/22aa8c8c-db4e-456f-ac3f-eb4401c88ee4" />
-
+<img width="3434" height="2126" alt="image" src="https://github.com/user-attachments/assets/431daee8-2b2c-457b-88ed-27c9bdea4d7d" />
 
 ## Why
 
-If you are sharing compute resources with others without a scheduling system, you often need to figure out which machines are free, and who's using them. This gives an insightful, easily readable overview of that.
+If you are sharing GPU resources with others across multiple machines without a scheduling system, you often need to figure out which machines are free, and who's using them. This gives an insightful, easily readable overview of that.
 
 ## Requirements & platform support
 
@@ -79,17 +77,18 @@ who-gpu --web
 ```
 
 Opens a dashboard in your browser straight away and fills it in as each machine
-answers, then keeps running until Ctrl-C. Machines are grouped **Available**
-/ **In use** / **Unreachable** (plus **Probing** while results are still coming
-in); click one for a full breakdown, with a tab showing plain `nvidia-smi`
-output. **List view** in the top bar swaps the cards for one row per machine
-under a column header, and **Group** switches between grouping by status and
-one flat list. **Sort** orders machines by any column, with the arrow button
-flipping the direction; in list view, clicking a column header does the same.
+answers, then keeps running until Ctrl-C. Click one for full output, either the `who-gpu --full` view, or plain `nvidia-smi`.
+
+**List view** in the top bar swaps the cards for one row per machine
+under a column header:
+<img width="3434" height="1474" alt="image" src="https://github.com/user-attachments/assets/ede0d801-81ee-46b9-bc70-c01e4a56af30" />
+
+Also featured: Grouping and sorting.
+
 All of these choices are remembered by the browser.
 
-Serverless and dependency-free: the webpage and data is just a file on disk that the probe loop
-rewrites, which is why it works everywhere the CLI does.
+The Web GUI is *serverless and dependency-free*: the webpage and data is just a file on disk that the CLI tool
+rewrites, so it works everywhere the CLI does.
 
 Files live in `~/.local/share/who-gpu/` (or `$XDG_DATA_HOME/who-gpu/`) and
 stay there after you quit, so you can reopen the last probe (clearly marked
@@ -104,25 +103,27 @@ interval (`WHO_GPU_INTERVAL`, `--interval`, or `INTERVAL=` in your config).
 
 ## Managing which hosts to probe
 
-By default who-gpu reads your `~/.ssh/config` and probes every host tagged with
-a `#probe` comment.
+At startup, or by running `who-gpu --setup`, you will be prompted to choose which machines to probe.
+To track this, who-gpu will add `#probe` comments to tag your ssh config file entries, like this:
 
-1. **`~/.ssh/config` `#probe` markers (default):**
-   ```sshconfig
-   Host gpu-node-1
-       HostName 10.0.0.1
-       User alice
-       #probe
-   ```
-   I recommend letting `who-gpu --setup` add these for you.
+```sshconfig
+ Host gpu-node-1
+     HostName 10.0.0.1
+     User alice
+     #probe
+```
 
-2. **On the command line** (you can use bash brace-expansion):
+You can of course also edit this manually. Any line below a host line will enable probing for that host.
+   
+I you don't want to use a config file, you can use:
+
+* **The command line** (you can use bash brace-expansion):
    ```bash
    who-gpu gpu-node-{1..8}
-   who-gpu alice@boxA boxB
+   who-gpu alice@192.168.10.14 192.168.10.15
    ```
 
-3. **A hosts file:** one host per line (`#` comments / blanks ignored). Pass it
+* **A hosts file:** one host per line (`#` comments / blanks ignored). Pass it
    with `-f`, or use `--no-ssh-config` to fall back to `~/.who-gpu-hosts`. See
    [`hosts.example`](hosts.example).
    ```bash
@@ -166,9 +167,9 @@ built on.
 
 ## What it reports
 
-- **Summary mode (default):** per host: busy/total GPUs, the usernames running
+- **CLI Summary mode (default):** per host: busy/total GPUs, the usernames running
   GPU processes, and who's logged in.
-- **Full mode (`--full`):** per host: uptime/load, logged-in users, per-GPU
+- **CLI Full mode (`--full`):** per host: uptime/load, logged-in users, per-GPU
   utilization and memory, each GPU process mapped to its owning username, and
   the top CPU processes.
 - **Web GUI (`--web`):** one card per machine, grouped by availability, with
@@ -180,7 +181,7 @@ built on.
 - Uses `ssh -o BatchMode=yes`. Hosts without working key auth show up as failed.
 - Probes run in parallel, so one dead host won't hold up the rest.
 - It reads GPU process owners via `nvidia-smi` + `ps`.
-
+- If you are using this and would like to see any features or changes implemented, don't hesitate to open an issue (or a PR)!
 ## License
 
 [MIT](LICENSE)

@@ -454,7 +454,11 @@ run_update() {
 
   before=$(git -C "$dir" rev-parse HEAD)
   echo "who-gpu: updating $dir"
-  if ! git -C "$dir" pull --ff-only 2>&1 | sed 's/^/  /'; then
+  # Capture rather than pipe: without pipefail, `git | sed` reports sed's status.
+  local out rc
+  out=$(git -C "$dir" pull --ff-only 2>&1); rc=$?
+  [ -n "$out" ] && printf '%s\n' "$out" | sed 's/^/  /'
+  if [ "$rc" -ne 0 ]; then
     echo "who-gpu: could not fast-forward (diverged branch, or no network)." >&2
     return 1; fi
   after=$(git -C "$dir" rev-parse HEAD)

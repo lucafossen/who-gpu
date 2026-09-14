@@ -7,3 +7,6 @@ hosts.txt
 *.swp
 *~
 .DS_Store
+
+# Personal notes, kept out of the repo
+TODO.md

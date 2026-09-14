@@ -587,27 +587,48 @@ uptime 2>/dev/null | sed 's/^ *//'
 echo "=== logged-in users ==="
 who 2>/dev/null | awk '{print $1}' | sort -u | paste -sd' ' - || echo "(none)"
 
-echo "=== gpus ==="
+# nvidia-smi loads the driver library on every invocation, and on a loaded
+# box that is where a probe spends its time, so it runs exactly twice: once
+# for the GPUs, once for the processes. Every section below is formatted
+# from these two captures. The GPU uuid is on both so a process can be
+# matched to its card; it is the last GPU field and the first process field
+# so a process name containing commas cannot shift it.
 if command -v nvidia-smi >/dev/null 2>&1; then
-  nvidia-smi --query-gpu=index,name,utilization.gpu,memory.used,memory.total \
-             --format=csv,noheader,nounits 2>/dev/null \
-  | awk -F', *' '{printf "  GPU%s %s | util %s%% | mem %s/%s MiB\n",$1,$2,$3,$4,$5}'
+  HAVE_SMI=1
+  GPUS=$(nvidia-smi --query-gpu=index,name,utilization.gpu,memory.used,memory.total,uuid \
+                    --format=csv,noheader,nounits 2>/dev/null)
+  APPS=$(nvidia-smi --query-compute-apps=gpu_uuid,pid,used_memory,process_name \
+                    --format=csv,noheader,nounits 2>/dev/null)
+else
+  HAVE_SMI=0; GPUS=""; APPS=""
+fi
+# Unified-memory parts (GB10, Jetson) have no memory of their own and report
+# [N/A]; what they draw on is system RAM, so report that instead: used is
+# what `free` calls used. A 7th field marks the line so the local side can
+# say so, and so that two such GPUs are not both counted as a full RAM.
+if [ "$HAVE_SMI" = 1 ] && printf '%s\n' "$GPUS" | grep -q 'N/A'; then
+  GPUS=$(printf '%s\n' "$GPUS" | awk -F', *' -v OFS=', ' \
+    -v t="$(awk '/^MemTotal:/ {print int($2/1024)}' /proc/meminfo 2>/dev/null)" \
+    -v a="$(awk '/^MemAvailable:/ {print int($2/1024)}' /proc/meminfo 2>/dev/null)" \
+    'NF>=6 && $5 !~ /^[0-9]+$/ && t>0 {$4=t-a; $5=t; $7="unified"} {print}')
+fi
+
+echo "=== gpus ==="
+if [ "$HAVE_SMI" = 1 ]; then
+  printf '%s\n' "$GPUS" \
+  | awk -F', *' 'NF>=5 {printf "  GPU%s %s | util %s%% | mem %s/%s MiB%s\n",$1,$2,$3,$4,$5,($7=="unified"?" (unified)":"")}'
 
   echo "=== gpu processes ==="
   # pid, used mem, process name -> resolve owner via ps
-  nvidia-smi --query-compute-apps=pid,used_memory,process_name \
-             --format=csv,noheader,nounits 2>/dev/null \
-  | while IFS=',' read -r pid mem pname; do
+  printf '%s\n' "$APPS" \
+  | while IFS=',' read -r _uuid pid mem pname; do
       pid=$(echo "$pid" | xargs); mem=$(echo "$mem" | xargs); pname=$(echo "$pname" | xargs)
       [ -z "$pid" ] && continue
       user=$(ps -o user= -p "$pid" 2>/dev/null | xargs)
       [ -z "$user" ] && user="?"
       printf "  %-12s pid %-7s %6s MiB  %s\n" "$user" "$pid" "$mem" "$pname"
     done
-  # if the loop printed nothing, note it
-  if [ -z "$(nvidia-smi --query-compute-apps=pid --format=csv,noheader 2>/dev/null)" ]; then
-    echo "  (no active GPU processes)"
-  fi
+  [ -z "$APPS" ] && echo "  (no active GPU processes)"
 else
   echo "  (nvidia-smi not found)"
 fi
@@ -616,20 +637,15 @@ echo "=== top cpu (by %cpu) ==="
 ps -eo user,pid,pcpu,pmem,comm --sort=-pcpu 2>/dev/null \
   | awk 'NR==1 || $3+0>0.5' | head -n "$((TOP_N+1))" | sed 's/^/  /'
 
-# Machine-readable per-GPU lines consumed by --web / --json. Deliberately a
-# separate nvidia-smi call from the human-readable section above, so that
-# section's output stays byte-identical to what it has always printed.
-# Format: __GPU__|index|name|util_pct|mem_used_mib|mem_total_mib
-if command -v nvidia-smi >/dev/null 2>&1; then
-  nvidia-smi --query-gpu=index,name,utilization.gpu,memory.used,memory.total \
-             --format=csv,noheader,nounits 2>/dev/null \
-  | awk -F', *' 'NF>=5 {printf "__GPU__|%s|%s|%s|%s|%s\n",$1,$2,$3,$4,$5}'
-fi
+# Machine-readable per-GPU lines consumed by --web / --json.
+# Format: __GPU__|index|name|util_pct|mem_used_mib|mem_total_mib|unified(0/1)
+printf '%s\n' "$GPUS" \
+| awk -F', *' 'NF>=6 {printf "__GPU__|%s|%s|%s|%s|%s|%d\n",$1,$2,$3,$4,$5,($7=="unified")}'
 
 # Plain `nvidia-smi` for the dashboard's second tab: the table people already
 # know how to read. Only emitted when asked (--web / --json), so the terminal
 # modes pay nothing for it. Fenced so the local side can lift it out.
-if [ "${WANT_SMI:-0}" = "1" ] && command -v nvidia-smi >/dev/null 2>&1; then
+if [ "${WANT_SMI:-0}" = "1" ] && [ "$HAVE_SMI" = 1 ]; then
   echo "__SMI_BEGIN__"
   nvidia-smi 2>/dev/null
   echo "__SMI_END__"
@@ -637,12 +653,18 @@ fi
 
 # Machine-readable one-liner consumed by the local --summary mode.
 # Format: __SUMMARY__|busy_gpus|total_gpus|gpu_users|logged_in_users
-if command -v nvidia-smi >/dev/null 2>&1; then
-  s_total=$(nvidia-smi --query-gpu=index --format=csv,noheader 2>/dev/null | wc -l | xargs)
-  s_busy=$(nvidia-smi --query-gpu=utilization.gpu --format=csv,noheader,nounits 2>/dev/null \
-           | awk '$1+0>=5' | wc -l | xargs)
-  s_gu=$(nvidia-smi --query-compute-apps=pid --format=csv,noheader,nounits 2>/dev/null \
-         | while read -r p; do ps -o user= -p "$(echo "$p" | xargs)" 2>/dev/null; done \
+# A GPU is busy when a compute process is attached to it or its utilization
+# is 5% or more. Utilization alone missed the common case of a job holding
+# most of a card's memory while idle between steps: nobody else can use that
+# card, so it is not free.
+if [ "$HAVE_SMI" = 1 ]; then
+  s_total=$(printf '%s\n' "$GPUS" | awk -F', *' 'NF>=6' | wc -l | xargs)
+  used=$(printf '%s\n' "$APPS" | awk -F', *' 'NF>=2 {print $1}' | sort -u | xargs)
+  s_busy=$(printf '%s\n' "$GPUS" \
+           | awk -F', *' -v used=" $used " 'NF>=6 && ($3+0>=5 || index(used, " " $6 " "))' \
+           | wc -l | xargs)
+  s_gu=$(printf '%s\n' "$APPS" | awk -F', *' 'NF>=2 {print $2}' \
+         | while read -r p; do ps -o user= -p "$p" 2>/dev/null; done \
          | sort -u | xargs)
 else
   s_total=0; s_busy=0; s_gu=""
@@ -804,8 +826,8 @@ probe_json_one() {
       mu = ($5 ~ /^[0-9]+$/) ? $5 + 0 : -1
       mt = ($6 ~ /^[0-9]+$/) ? $6 + 0 : -1
       if (n++) printf ","
-      printf "{\"index\":%d,\"name\":\"%s\",\"util\":%d,\"mem_used\":%d,\"mem_total\":%d}", \
-             $2 + 0, name, u, mu, mt
+      printf "{\"index\":%d,\"name\":\"%s\",\"util\":%d,\"mem_used\":%d,\"mem_total\":%d,\"unified\":%s}", \
+             $2 + 0, name, u, mu, mt, ($7 == "1") ? "true" : "false"
     }')
 
   # The fenced nvidia-smi table is its own field; everything else stays the
@@ -1264,9 +1286,9 @@ write_shell_html() {
     return p;
   }
   function memPct(h) {
-    var used = 0, total = 0, i, g;
-    for (i = 0; i < h.gpus.length; i++) {
-      g = h.gpus[i];
+    var used = 0, total = 0, i, g, gs = memGpus(h);
+    for (i = 0; i < gs.length; i++) {
+      g = gs[i];
       if (g.mem_used >= 0 && g.mem_total > 0) { used += g.mem_used; total += g.mem_total; }
     }
     return total > 0 ? Math.round((used / total) * 100) : -1;
@@ -1279,16 +1301,32 @@ write_shell_html() {
   function joinUsers(list) { return list.length ? list.join("  ") : ""; }
   // Total VRAM in GB, the machine's "GPU power" score. Cards report MiB and
   // advertise binary GB (81920 MiB is "80GB"), so divide by 1024, not 1000.
+  // Unified-memory GPUs report the machine's RAM, so however many there are
+  // it is counted once. Cards with memory of their own add up as usual.
+  function memGpus(h) {
+    var out = [], seen = false, i, g;
+    for (i = 0; i < h.gpus.length; i++) {
+      g = h.gpus[i];
+      if (g.unified) { if (seen) continue; seen = true; }
+      out.push(g);
+    }
+    return out;
+  }
+  function isUnified(h) {
+    var i;
+    for (i = 0; i < h.gpus.length; i++) if (h.gpus[i].unified) return true;
+    return false;
+  }
   function totalVram(h) {
-    var mib = 0, i;
-    for (i = 0; i < h.gpus.length; i++) if (h.gpus[i].mem_total > 0) mib += h.gpus[i].mem_total;
+    var mib = 0, i, gs = memGpus(h);
+    for (i = 0; i < gs.length; i++) if (gs[i].mem_total > 0) mib += gs[i].mem_total;
     return mib > 0 ? Math.round(mib / 1024) : -1;
   }
   // Used VRAM in GB, or -1 when no card reported a number.
   function usedVram(h) {
-    var mib = 0, any = false, i, g;
-    for (i = 0; i < h.gpus.length; i++) {
-      g = h.gpus[i];
+    var mib = 0, any = false, i, g, gs = memGpus(h);
+    for (i = 0; i < gs.length; i++) {
+      g = gs[i];
       if (g.mem_used >= 0 && g.mem_total > 0) { mib += g.mem_used; any = true; }
     }
     return any ? mib / 1024 : -1;
@@ -1298,6 +1336,7 @@ write_shell_html() {
   function memTotalText(h) {
     var gb = totalVram(h), n = h.gpus.length, same = true, first, i, mt;
     if (gb < 0) return "\u2014";
+    if (isUnified(h)) return gb + " GB (unified)";
     if (n < 2) return gb + " GB";
     for (i = 0; i < n; i++) {
       mt = h.gpus[i].mem_total;
@@ -1484,7 +1523,7 @@ write_shell_html() {
         var row = el("div", "gpubar");
         row.title = "GPU" + g.index + (g.name ? " " + g.name : "")
                   + " · " + (g.util < 0 ? "util unknown" : g.util + "% util")
-                  + " · " + (mem ? mem + " memory" : "memory unknown");
+                  + " · " + (mem ? mem + (g.unified ? " unified memory" : " memory") : "memory unknown");
         row.appendChild(el("span", "idx", "GPU" + g.index));
         var track = el("div", "track");
         var u = g.util < 0 ? 0 : g.util;

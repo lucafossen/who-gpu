@@ -8,7 +8,7 @@ use and by which users**.
 
 Also includes a dependency-free web GUI.
 
-<img width="3434" height="2126" alt="image" src="https://github.com/user-attachments/assets/431daee8-2b2c-457b-88ed-27c9bdea4d7d" />
+<img width="3558" height="2672" alt="image" src="https://github.com/user-attachments/assets/128f2e78-e47e-4ba0-8260-29f67a61756c" />
 
 ## Why
 
@@ -77,17 +77,14 @@ who-gpu --web
 ```
 
 Opens a dashboard in your browser straight away and fills it in as each machine
-answers, then keeps running until Ctrl-C. Each card names the GPU models under
-the hostname and lists memory used and total VRAM, so you can tell what a
-machine has at a glance. Click one for full output, either the `who-gpu --full` view, or plain `nvidia-smi`.
+answers, then keeps running until you Ctrl-C. Click a machine for full output (either the `who-gpu --full` view or plain `nvidia-smi`).
 
 **List view** in the top bar swaps the cards for one row per machine
 under a column header:
-<img width="3434" height="1474" alt="image" src="https://github.com/user-attachments/assets/ede0d801-81ee-46b9-bc70-c01e4a56af30" />
 
-Also featured: Grouping and sorting.
+<img width="3558" height="1496" alt="image" src="https://github.com/user-attachments/assets/193c3384-f678-46ae-8f69-ac5ffad7aa32" />
 
-All of these choices are remembered by the browser.
+Also featured: Grouping, sorting and all your choices remembered by the browser.
 
 The Web GUI is *serverless and dependency-free*: the webpage and data is just a file on disk that the CLI tool
 rewrites, so it works everywhere the CLI does.
@@ -119,7 +116,7 @@ To track this, who-gpu will add `#probe` comments to tag your ssh config file en
      #probe
 ```
 
-You can of course also edit this manually. Any line below a host line will enable probing for that host.
+You can of course also edit this manually.
    
 I you don't want to use a config file, you can use:
 
@@ -159,8 +156,7 @@ change that:
 | `-p N`, `--parallel N` | How many hosts to probe at once (default 6) |
 | `-h`, `--help` | Usage |
 
-`--summary`, `--full` and `--web` all answer "what should I emit?", so only one
-of them can be given at a time.
+Only one of `--summary`, `--full` or `--web` are to be used at a time.
 
 Environment overrides: `WHO_GPU_HOSTS` (fallback hosts file path),
 `WHO_GPU_SSH_CONFIG` (ssh config path), `WHO_GPU_OUT` (where `--web` writes,
@@ -168,7 +164,7 @@ default `~/.local/share/who-gpu`), `WHO_GPU_INTERVAL` (seconds between `--web` p
 cycles; unset means 10, or 60 when SSH connections can't be reused),
 `WHO_GPU_NO_MUX` (set to `1` to disable `--web` SSH connection reuse).
 
-`--json` dumps the same data as JSON for scripting; it's what `--web` is
+`--json` dumps JSON for scripting; it's what `--web` is
 built on.
 
 ## What it reports

@@ -9,10 +9,3 @@
   README note recommending `WHO_GPU_OUT=/dev/shm/who-gpu` and a longer
   `WHO_GPU_INTERVAL` for always-on Pi displays. Cost of the tmpfs default: the
   page vanishes on reboot, harmless since the loop rewrites it on start.
-
-- **Show which users control which processes in the full view.** The
-  `=== gpu processes ===` section lists user, pid, memory and process name, but
-  not which GPU each process sits on: the remote snippet reads the GPU uuid
-  from `--query-compute-apps` and discards it (`_uuid`). Make the full view
-  (and the dashboard's Details tab, which shows the same text) map each
-  process to its GPU and user, so it is clear who holds what.

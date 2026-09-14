@@ -31,6 +31,10 @@ INTERVAL_SET=0          # 1 = a human picked a number, so who-gpu must not adapt
 UPDATE_CHECK=""
 ASKED=0
 
+# The header comment above is the help text: everything from line 2 down to
+# the first line that is not a comment.
+usage() { awk 'NR == 1 { next } /^#/ { print; next } { exit }' "$0"; }
+
 while [[ $# -gt 0 ]]; do
   case "$1" in
     --icon|--desktop) WANT_ICON=1; shift ;;
@@ -49,8 +53,8 @@ while [[ $# -gt 0 ]]; do
       INTERVAL="$2"; INTERVAL_SET=1; shift 2 ;;
     --no-update-check) UPDATE_CHECK=0; shift ;;
     --no-path) WANT_PATH=0; shift ;;
-    -h|--help) sed -n '2,18p' "$0"; exit 0 ;;
-    *) echo "unknown option: $1" >&2; sed -n '2,18p' "$0"; exit 1 ;;
+    -h|--help) usage; exit 0 ;;
+    *) echo "unknown option: $1" >&2; usage; exit 1 ;;
   esac
 done
 

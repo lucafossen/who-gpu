@@ -21,6 +21,8 @@
 #   who-gpu host1 host2 ...           # probe these hosts instead
 #   who-gpu -f hosts.txt              # read hosts from a file (one per line)
 #   who-gpu -u alice host1            # ssh as a specific user
+#   who-gpu --json                    # the same data as JSON, for scripts
+#   who-gpu --update                  # fast-forward to the latest version
 #
 # Host sources (first that applies wins):
 #   1. hosts on the command line
@@ -154,7 +156,9 @@ no_reuse_note() {
   fi
 }
 
-usage() { sed -n '2,38p' "$0"; exit "${1:-0}"; }
+# The header comment above is the help text: everything from line 2 down to
+# the first line that is not a comment.
+usage() { awk 'NR == 1 { next } /^#/ { print; next } { exit }' "$0"; exit "${1:-0}"; }
 
 hosts=()                # the machines to probe; parse_args and collect_hosts fill it
 

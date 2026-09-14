@@ -917,18 +917,28 @@ emit_fleet_json() {
       body+='"gpu_users":[],"logged_in":[],"gpus":[],"detail":"","smi":""}'
     fi
   done
-  local upd
-  upd=$( { update_available || true; } )
   printf '{"ts":%s,"pending":%s,"interval":%s,"version":%s,"update":%s,"update_url":%s,"hosts":[%s]}\n' \
     "$CYCLE_TS" "$pending" "$WEB_INTERVAL" \
-    "$(version_string | json_str)" \
-    "$(printf '%s' "${upd%% *}" | json_str)" \
-    "$(printf '%s' "${upd#* }" | json_str)" \
+    "$(printf '%s' "$SELF_VERSION" | json_str)" \
+    "$(printf '%s' "${UPDATE_INFO%% *}" | json_str)" \
+    "$(printf '%s' "${UPDATE_INFO#* }" | json_str)" \
     "$body"
+}
+
+# The version and update fields of the data file. Looked up once per cycle
+# rather than on every publish: emit_fleet_json runs each time a host answers,
+# and both lookups shell out to git. Set before the publisher is started, so
+# the background copy inherits them.
+SELF_VERSION=""
+UPDATE_INFO=""          # "<label> <url>", or empty when up to date
+refresh_update_info() {
+  SELF_VERSION=$(version_string)
+  UPDATE_INFO=$( { update_available || true; } )
 }
 
 # --json: probe everything, then emit once.
 collect_fleet_json() {
+  refresh_update_info
   probe_fleet
   emit_fleet_json
 }
@@ -1004,6 +1014,7 @@ stop_publisher() {
 # One --web probe cycle: publish as results land, then once more when complete
 # so the file carries the finished cycle's timestamp.
 web_cycle() {
+  refresh_update_info
   start_publisher
   probe_fleet
   stop_publisher
@@ -1230,6 +1241,7 @@ run_web() {
   # Open the page before probing anything: every host starts out as "probing"
   # and fills in as it answers, rather than the browser appearing only once the
   # slowest host has been heard from.
+  refresh_update_info
   write_data_js
   arm_probe_marker
   if open_browser "$WEB_OUT/fleet.html"; then

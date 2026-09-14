@@ -77,7 +77,9 @@ who-gpu --web
 ```
 
 Opens a dashboard in your browser straight away and fills it in as each machine
-answers, then keeps running until Ctrl-C. Click one for full output, either the `who-gpu --full` view, or plain `nvidia-smi`.
+answers, then keeps running until Ctrl-C. Each card names the GPU models under
+the hostname and lists memory used and total VRAM, so you can tell what a
+machine has at a glance. Click one for full output, either the `who-gpu --full` view, or plain `nvidia-smi`.
 
 **List view** in the top bar swaps the cards for one row per machine
 under a column header:

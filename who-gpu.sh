@@ -977,6 +977,8 @@ write_shell_html() {
     margin: 0 0 4px; font-size: 15px; font-weight: 600;
     word-break: break-all; color: #ffffff;
   }
+  .hw { font-size: 12px; color: #b8b8b8; word-break: break-word; }
+  .hw:empty { display: none; }
   .percent { line-height: 1; margin: 6px 0 2px; }
   .percent span { font-size: 42px; font-weight: 300; }
   .percentsymbol { font-size: 18px; font-weight: 300; color: #c4c4c4; margin-left: 1px; }
@@ -1044,7 +1046,7 @@ write_shell_html() {
      two halves become display:contents so their children are the grid items.
      The GPU bars share a fixed-width column, and the detail pane spans the
      row underneath. Everything else (expand, tabs, filter, sort) is untouched. */
-  body.list { --cols: minmax(150px, 1.3fr) 76px minmax(130px, 1.5fr) repeat(4, minmax(80px, 1fr)) 160px; }
+  body.list { --cols: minmax(150px, 1.3fr) minmax(130px, 1.4fr) 76px minmax(130px, 1.5fr) repeat(5, minmax(80px, 1fr)) 160px; }
   body.list .cards-container { flex-direction: column; gap: 4px; }
   body.list .card-wrap {
     display: grid; align-items: center; gap: 0 14px; padding: 8px 14px;
@@ -1069,6 +1071,7 @@ write_shell_html() {
   body.list .stat h3 { display: none; }
   body.list .card, body.list .card .left, body.list .card .right { display: contents; }
   body.list .card .left h1 { margin: 0; font-size: 14px; }
+  body.list .hw, body.list .hw:empty { display: block; font-size: 12px; }
   body.list .percent { margin: 0; }
   body.list .percent span, body.list .card-wrap.down .percent span { font-size: 18px; }
   body.list .percentsymbol { font-size: 12px; }
@@ -1094,7 +1097,9 @@ write_shell_html() {
       <option value="users">Sort: GPU users</option>
       <option value="status">Sort: status</option>
       <option value="peak">Sort: peak util</option>
-      <option value="memory">Sort: memory</option>
+      <option value="memory">Sort: memory used</option>
+      <option value="vram">Sort: memory total</option>
+      <option value="model">Sort: GPU model</option>
       <option value="logged">Sort: logged in</option>
       <option value="util">Sort: util per GPU</option>
     </select>
@@ -1115,23 +1120,23 @@ write_shell_html() {
   <div class="summary" id="summary">Waiting for the first probe&hellip;</div>
 
   <div class="systems-container" id="sec-free" hidden>
-    <div class="sechead"><h2 data-key="name" title="Sort by machine name">Available</h2><span class="col" data-key="busy">GPUs busy</span><span class="col" data-key="users">GPU users</span><span class="col" data-key="status">Status</span><span class="col" data-key="peak">Peak util</span><span class="col" data-key="memory">Memory</span><span class="col" data-key="logged">Logged in</span><span class="col" data-key="util">Util per GPU</span></div>
+    <div class="sechead"><h2 data-key="name" title="Sort by machine name">Available</h2><span class="col" data-key="model">GPU model</span><span class="col" data-key="busy">GPUs busy</span><span class="col" data-key="users">GPU users</span><span class="col" data-key="status">Status</span><span class="col" data-key="peak">Peak util</span><span class="col" data-key="memory">Mem used</span><span class="col" data-key="vram">Mem total</span><span class="col" data-key="logged">Logged in</span><span class="col" data-key="util">Util per GPU</span></div>
     <div class="cards-container" id="cards-free"></div>
   </div>
   <div class="systems-container" id="sec-busy" hidden>
-    <div class="sechead"><h2 data-key="name" title="Sort by machine name">In use</h2><span class="col" data-key="busy">GPUs busy</span><span class="col" data-key="users">GPU users</span><span class="col" data-key="status">Status</span><span class="col" data-key="peak">Peak util</span><span class="col" data-key="memory">Memory</span><span class="col" data-key="logged">Logged in</span><span class="col" data-key="util">Util per GPU</span></div>
+    <div class="sechead"><h2 data-key="name" title="Sort by machine name">In use</h2><span class="col" data-key="model">GPU model</span><span class="col" data-key="busy">GPUs busy</span><span class="col" data-key="users">GPU users</span><span class="col" data-key="status">Status</span><span class="col" data-key="peak">Peak util</span><span class="col" data-key="memory">Mem used</span><span class="col" data-key="vram">Mem total</span><span class="col" data-key="logged">Logged in</span><span class="col" data-key="util">Util per GPU</span></div>
     <div class="cards-container" id="cards-busy"></div>
   </div>
   <div class="systems-container" id="sec-probing" hidden>
-    <div class="sechead"><h2 data-key="name" title="Sort by machine name">Probing</h2><span class="col" data-key="busy">GPUs busy</span><span class="col" data-key="users">GPU users</span><span class="col" data-key="status">Status</span><span class="col" data-key="peak">Peak util</span><span class="col" data-key="memory">Memory</span><span class="col" data-key="logged">Logged in</span><span class="col" data-key="util">Util per GPU</span></div>
+    <div class="sechead"><h2 data-key="name" title="Sort by machine name">Probing</h2><span class="col" data-key="model">GPU model</span><span class="col" data-key="busy">GPUs busy</span><span class="col" data-key="users">GPU users</span><span class="col" data-key="status">Status</span><span class="col" data-key="peak">Peak util</span><span class="col" data-key="memory">Mem used</span><span class="col" data-key="vram">Mem total</span><span class="col" data-key="logged">Logged in</span><span class="col" data-key="util">Util per GPU</span></div>
     <div class="cards-container" id="cards-probing"></div>
   </div>
   <div class="systems-container" id="sec-down" hidden>
-    <div class="sechead"><h2 data-key="name" title="Sort by machine name">Unreachable</h2><span class="col" data-key="busy">GPUs busy</span><span class="col" data-key="users">GPU users</span><span class="col" data-key="status">Status</span><span class="col" data-key="peak">Peak util</span><span class="col" data-key="memory">Memory</span><span class="col" data-key="logged">Logged in</span><span class="col" data-key="util">Util per GPU</span></div>
+    <div class="sechead"><h2 data-key="name" title="Sort by machine name">Unreachable</h2><span class="col" data-key="model">GPU model</span><span class="col" data-key="busy">GPUs busy</span><span class="col" data-key="users">GPU users</span><span class="col" data-key="status">Status</span><span class="col" data-key="peak">Peak util</span><span class="col" data-key="memory">Mem used</span><span class="col" data-key="vram">Mem total</span><span class="col" data-key="logged">Logged in</span><span class="col" data-key="util">Util per GPU</span></div>
     <div class="cards-container" id="cards-down"></div>
   </div>
   <div class="systems-container" id="sec-all" hidden>
-    <div class="sechead"><h2 data-key="name" title="Sort by machine name">Machines</h2><span class="col" data-key="busy">GPUs busy</span><span class="col" data-key="users">GPU users</span><span class="col" data-key="status">Status</span><span class="col" data-key="peak">Peak util</span><span class="col" data-key="memory">Memory</span><span class="col" data-key="logged">Logged in</span><span class="col" data-key="util">Util per GPU</span></div>
+    <div class="sechead"><h2 data-key="name" title="Sort by machine name">Machines</h2><span class="col" data-key="model">GPU model</span><span class="col" data-key="busy">GPUs busy</span><span class="col" data-key="users">GPU users</span><span class="col" data-key="status">Status</span><span class="col" data-key="peak">Peak util</span><span class="col" data-key="memory">Mem used</span><span class="col" data-key="vram">Mem total</span><span class="col" data-key="logged">Logged in</span><span class="col" data-key="util">Util per GPU</span></div>
     <div class="cards-container" id="cards-all"></div>
   </div>
   <div class="systems-container" id="sec-none" hidden>
@@ -1245,6 +1250,50 @@ write_shell_html() {
     return n ? sum / n : -1;
   }
   function joinUsers(list) { return list.length ? list.join("  ") : ""; }
+  // Total VRAM in GB, the machine's "GPU power" score. Cards report MiB and
+  // advertise binary GB (81920 MiB is "80GB"), so divide by 1024, not 1000.
+  function totalVram(h) {
+    var mib = 0, i;
+    for (i = 0; i < h.gpus.length; i++) if (h.gpus[i].mem_total > 0) mib += h.gpus[i].mem_total;
+    return mib > 0 ? Math.round(mib / 1024) : -1;
+  }
+  // Used VRAM in GB, or -1 when no card reported a number.
+  function usedVram(h) {
+    var mib = 0, any = false, i, g;
+    for (i = 0; i < h.gpus.length; i++) {
+      g = h.gpus[i];
+      if (g.mem_used >= 0 && g.mem_total > 0) { mib += g.mem_used; any = true; }
+    }
+    return any ? mib / 1024 : -1;
+  }
+  // "320 GB (8\u00d7 40 GB)" when every card is the same size, "320 GB (8 GPUs)"
+  // when they differ or one did not report; a lone card is just "80 GB".
+  function memTotalText(h) {
+    var gb = totalVram(h), n = h.gpus.length, same = true, first, i, mt;
+    if (gb < 0) return "\u2014";
+    if (n < 2) return gb + " GB";
+    for (i = 0; i < n; i++) {
+      mt = h.gpus[i].mem_total;
+      if (i === 0) first = mt;
+      if (mt <= 0 || mt !== first) { same = false; break; }
+    }
+    return gb + " GB (" + n + (same ? "\u00d7 " + Math.round(first / 1024) + " GB)" : " GPUs)");
+  }
+  function fmtGb(gb) { return (gb < 10 ? Math.round(gb * 10) / 10 : Math.round(gb)) + " GB"; }
+  // "4\u00d7 A100-SXM4-80GB, 2\u00d7 RTX 3090": what the machine has, without
+  // opening the detail pane. Identical models collapse into a count; the
+  // vendor prefix goes because every card has one and it says nothing.
+  function hardware(h) {
+    var names = [], counts = {}, i, n, parts = [];
+    for (i = 0; i < h.gpus.length; i++) {
+      n = (h.gpus[i].name || "").replace(/^NVIDIA\s+/, "").replace(/^(GeForce|Tesla)\s+/, "");
+      if (!n) continue;
+      if (!counts[n]) { counts[n] = 0; names.push(n); }
+      counts[n]++;
+    }
+    for (i = 0; i < names.length; i++) parts.push(counts[names[i]] + "\u00d7 " + names[i]);
+    return parts.join(", ");
+  }
 
   // --- sorting ------------------------------------------------------------
   // Hosts without data (probing, unreachable) always sink to the bottom; the
@@ -1257,6 +1306,8 @@ write_shell_html() {
       case "status": return STATUS_RANK[classFor(h)];
       case "peak":   return peakUtil(h);
       case "memory": return memPct(h);
+      case "vram":   return totalVram(h);
+      case "model":  return hardware(h).toLowerCase();
       case "logged": return h.logged_in.length;
       case "util":   return avgUtil(h);
       default:       return h.name.toLowerCase();
@@ -1280,7 +1331,7 @@ write_shell_html() {
     render();
   }
   // Numbers read best largest first; names, smallest first.
-  function defaultDir(key) { return key === "name" ? "asc" : "desc"; }
+  function defaultDir(key) { return key === "name" || key === "model" ? "asc" : "desc"; }
 
   // --- card construction / patching ---------------------------------------
   function buildCard(h) {
@@ -1290,16 +1341,17 @@ write_shell_html() {
     var right = el("div", "right");
 
     var title = el("h1", null, h.name);
+    var hw = el("div", "hw");
     var pct = el("div", "percent");
     var big = el("span"); var sup = el("sup", "percentsymbol");
     pct.appendChild(big); pct.appendChild(sup);
     var sub = el("div", "sublabel", "GPUs busy");
     var users = el("div", "procuser");
-    left.appendChild(title); left.appendChild(pct);
+    left.appendChild(title); left.appendChild(hw); left.appendChild(pct);
     left.appendChild(sub); left.appendChild(users);
 
     var stats = {};
-    ["Status", "Peak util", "Memory", "Logged in"].forEach(function (label) {
+    ["Status", "Peak util", "Mem used", "Mem total", "Logged in"].forEach(function (label) {
       var box = el("div", "stat");
       box.appendChild(el("h3", null, label));
       var p = el("p", null, "");
@@ -1342,7 +1394,7 @@ write_shell_html() {
       updateCard(refs.host);    // refs.host: the latest payload, not the one this card was built from
     });
 
-    var refs = { wrap: wrap, card: card, title: title, big: big, sup: sup,
+    var refs = { wrap: wrap, card: card, title: title, hw: hw, big: big, sup: sup,
                  sub: sub, users: users, stats: stats, bars: bars,
                  detailWrap: detailWrap, detail: detail, tabs: tabs,
                  tabBtns: tabBtns, panes: panes, host: h };
@@ -1356,6 +1408,7 @@ write_shell_html() {
     if (r.wrap.className !== cls) r.wrap.className = cls;
 
     setText(r.title, h.name);
+    setText(r.hw, hardware(h));
 
     if (h.probing) {
       setText(r.big, "…");
@@ -1379,10 +1432,11 @@ write_shell_html() {
     setText(r.users, gu || "\u2014");
     r.users.className = gu ? "procuser" : "procuser none";
 
-    var pu = peakUtil(h), mp = memPct(h);
+    var pu = peakUtil(h), mp = memPct(h), mu = usedVram(h);
     setText(r.stats["Status"], statusWord(h));
     setText(r.stats["Peak util"], pu >= 0 ? pu + "%" : "—");
-    setText(r.stats["Memory"], mp >= 0 ? mp + "%" : "—");
+    setText(r.stats["Mem used"], mp >= 0 ? fmtGb(mu) + " (" + mp + "%)" : "—");
+    setText(r.stats["Mem total"], memTotalText(h));
     setText(r.stats["Logged in"], joinUsers(h.logged_in) || "\u2014");
 
     if (!h.reachable && h.error) setText(r.stats["Status"], h.error);
@@ -1452,7 +1506,7 @@ write_shell_html() {
 
     var shown = data.hosts.filter(function (h) {
       if (!q) return true;
-      var hay = (h.name + " " + h.gpu_users.join(" ") + " " + h.logged_in.join(" ")).toLowerCase();
+      var hay = (h.name + " " + hardware(h) + " " + h.gpu_users.join(" ") + " " + h.logged_in.join(" ")).toLowerCase();
       return hay.indexOf(q) !== -1;
     });
 

@@ -767,7 +767,10 @@ probe() {
     return
   fi
 
-  {
+  # Assembled first and written in one go, so blocks from parallel workers do
+  # not interleave line by line. The extra newline is the gap between blocks.
+  local block
+  block=$(
     echo "########################################################################"
     echo "# $host"
     echo "########################################################################"
@@ -776,8 +779,8 @@ probe() {
     else
       echo "$out" | grep -v -e '^__SUMMARY__|' -e '^__GPU__|'
     fi
-    echo
-  }
+  )
+  printf '%s\n\n' "$block"
 }
 
 # ---- structured data (--json / --web) -------------------------------------
@@ -1275,7 +1278,7 @@ run_terminal() {
   echo "Probing ${#hosts[@]} host(s) with up to $PARALLEL in parallel..."
   echo
 
-  # Run in parallel but keep each host's block contiguous; sort by host order.
+  # Hosts print in the order they answer; each one's output is written whole.
   printf '%s\n' "${hosts[@]}" \
     | xargs -P "$PARALLEL" -I{} bash -c 'probe "$@"' _ {}
 

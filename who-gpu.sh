@@ -371,20 +371,24 @@ icon_installed() {
 update_available() {
   [[ "$CFG_UPDATE_CHECK" == "1" ]] || return 1
   command -v git >/dev/null 2>&1 || return 1
-  local dir cache now last refs remote local_rev tag tag_rev label url cached_label cached_url
+  local dir cache now last refs remote local_rev tag tag_rev label url cached_head cached_label cached_url
   dir="$(resolve_self_dir)"
   [ -d "$dir/.git" ] || return 1
 
-  # Cache holds "<checked-at> <label> <url>", label and url empty when up to
-  # date. The RESULT has to be cached too, not just the timestamp -- otherwise
-  # a found update would vanish again for a day on the very next call.
+  # Cache holds "<checked-at> <head> <label> <url>", label and url empty when
+  # up to date. The RESULT has to be cached too, not just the timestamp --
+  # otherwise a found update would vanish again for a day on the very next
+  # call. And the HEAD it was checked against: a `git pull` or rebase done by
+  # hand moves HEAD without going through --update, and the answer must not
+  # outlive the commit it was computed for.
   cache="${XDG_CACHE_HOME:-$HOME/.cache}/who-gpu/update-check"
   mkdir -p "$(dirname "$cache")" 2>/dev/null || return 1
   now=$(date +%s)
+  local_rev=$(git -C "$dir" rev-parse HEAD 2>/dev/null)
   if [ -f "$cache" ]; then
-    read -r last cached_label cached_url < "$cache" 2>/dev/null || true
+    read -r last cached_head cached_label cached_url < "$cache" 2>/dev/null || true
     case "$last" in ''|*[!0-9]*) last=0 ;; esac
-    if [ $((now - last)) -lt 86400 ]; then
+    if [ $((now - last)) -lt 86400 ] && [ "${cached_head:-}" = "$local_rev" ]; then
       [ -n "${cached_label:-}" ] || return 1
       printf '%s %s' "$cached_label" "$cached_url"
       return 0
@@ -397,13 +401,12 @@ update_available() {
   remote=$(printf '%s\n' "$refs" | awk '$2 == "refs/heads/main" {print $1}')
   if [ -z "$remote" ]; then
     # Offline or unreachable: remember we tried, so we do not retry every run.
-    printf '%s \n' "$now" > "$cache"
+    printf '%s %s \n' "$now" "$local_rev" > "$cache"
     return 1
   fi
-  local_rev=$(git -C "$dir" rev-parse HEAD 2>/dev/null)
   # Behind only if the remote commit is not already an ancestor of HEAD.
   if [ "$remote" = "$local_rev" ] || git -C "$dir" merge-base --is-ancestor "$remote" HEAD 2>/dev/null; then
-    printf '%s \n' "$now" > "$cache"
+    printf '%s %s \n' "$now" "$local_rev" > "$cache"
     return 1
   fi
 
@@ -415,7 +418,7 @@ update_available() {
   else
     label="${remote:0:7}"; url="$REPO_URL/commits/main"
   fi
-  printf '%s %s %s\n' "$now" "$label" "$url" > "$cache"
+  printf '%s %s %s %s\n' "$now" "$local_rev" "$label" "$url" > "$cache"
   printf '%s %s' "$label" "$url"
   return 0
 }
@@ -462,6 +465,9 @@ run_update() {
     echo "who-gpu: could not fast-forward (diverged branch, or no network)." >&2
     return 1; fi
   after=$(git -C "$dir" rev-parse HEAD)
+  # Whatever the outcome, we just asked the remote: a cached "newer version
+  # available" from before is stale now, even if the pull changed nothing.
+  rm -f "${XDG_CACHE_HOME:-$HOME/.cache}/who-gpu/update-check" 2>/dev/null
 
   if [ "$before" = "$after" ]; then
     echo "who-gpu: already up to date ($(version_string))"
@@ -480,7 +486,6 @@ run_update() {
     echo "who-gpu: install scripts changed, refreshing your installation..."
     if icon_installed; then bash "$dir/install.sh" --icon; else bash "$dir/install.sh"; fi
   fi
-  rm -f "${XDG_CACHE_HOME:-$HOME/.cache}/who-gpu/update-check" 2>/dev/null
   return 0
 }
 

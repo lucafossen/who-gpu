@@ -1814,6 +1814,46 @@ open_browser() {
   return 1
 }
 
+# Refuse to start a second dashboard over the same output directory. Two
+# instances would each rewrite fleet-data.js and probe-now.js on their own
+# clock, so the page would flicker between two sets of results, and the fleet
+# would be probed twice as often as the user asked for. The easy way to get
+# here is double-clicking the desktop icon twice.
+#
+# A pid file rather than flock: flock is not on macOS and not in Git Bash, and
+# the whole tool is bash+ssh only. The file names the pid so a stale one (a
+# crash, a lost terminal) is detected with kill -0 and taken over; pid reuse
+# could make a stale file look live, which is why the message says where it is.
+WEB_PIDFILE=""
+claim_web_pidfile() {
+  local pidfile="$WEB_OUT/.who-gpu.pid" old
+  if old=$(cat "$pidfile" 2>/dev/null) && [[ "$old" =~ ^[0-9]+$ ]] \
+     && [[ "$old" != "$$" ]] && kill -0 "$old" 2>/dev/null; then
+    echo "aborted: who-gpu --web is already running (pid $old); its dashboard is at" >&2
+    echo "         $(web_url)" >&2
+    echo "         Use that one, or stop it first (Ctrl-C, or close its window)." >&2
+    echo "         If nothing is running, delete $pidfile" >&2
+    exit 1
+  fi
+  echo "$$" > "$pidfile" || { echo "who-gpu: cannot write $pidfile" >&2; exit 1; }
+  WEB_PIDFILE="$pidfile"
+  # The signal trap below ends with `exit`, which runs this too. Background
+  # children (the publisher, probe subshells) start with traps reset, so only
+  # the process that wrote the file removes it.
+  trap 'rm -f "$WEB_PIDFILE"' EXIT
+}
+
+# The dashboard's location in the form the user can paste into a browser: a
+# file:// URL, except on Windows where a Unix file:// path is no use and the
+# browser wants the native path instead.
+web_url() {
+  if [[ "$(web_detect_os)" == windows ]]; then
+    win_path "$WEB_OUT/fleet.html"
+  else
+    echo "file://$WEB_OUT/fleet.html"
+  fi
+}
+
 run_web() {
   # One-time move of the old default location, so upgrading does not leave a
   # stray folder in the home directory. Only if it is clearly ours.
@@ -1822,10 +1862,11 @@ run_web() {
       && echo "who-gpu: moved dashboard files from $LEGACY_WEB_OUT to $WEB_OUT"
   fi
   mkdir -p "$WEB_OUT" || { echo "who-gpu: cannot create $WEB_OUT" >&2; exit 1; }
+  claim_web_pidfile
   WEB_TMP=$(mktemp -d 2>/dev/null || mktemp -d -t who-gpu) || {
     echo "who-gpu: cannot create a temp directory" >&2; exit 1; }
   export WEB_TMP
-  trap 'stop_publisher; close_ssh_mux; rm -rf "$WEB_TMP"; printf "\nwho-gpu: stopped. Dashboard left at %s\n" "$WEB_OUT/fleet.html"; exit 0' INT TERM HUP
+  trap 'stop_publisher; close_ssh_mux; rm -rf "$WEB_TMP"; printf "\nwho-gpu: stopped. Dashboard left at %s\n" "$(web_url)"; exit 0' INT TERM HUP
 
   write_shell_html
 
@@ -1847,16 +1888,10 @@ run_web() {
   write_data_js
   arm_probe_marker
   if open_browser "$WEB_OUT/fleet.html"; then
-    echo "who-gpu: opened $WEB_OUT/fleet.html"
+    echo "who-gpu: opened $(web_url)"
   else
     echo "who-gpu: open this in your browser:"
-    # A Unix file:// URL is no use to a Windows browser, so hand that shell the
-    # path in the form it can actually paste.
-    if [[ "$(web_detect_os)" == windows ]]; then
-      echo "         $(win_path "$WEB_OUT/fleet.html")"
-    else
-      echo "         file://$WEB_OUT/fleet.html"
-    fi
+    echo "         $(web_url)"
   fi
   echo "who-gpu: probing ${#hosts[@]} host(s) (up to $PARALLEL at once)"
 

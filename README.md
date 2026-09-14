@@ -94,6 +94,10 @@ Files live in `~/.local/share/who-gpu/` (or `$XDG_DATA_HOME/who-gpu/`) and
 stay there after you quit, so you can reopen the last probe (clearly marked
 stale).
 
+Only one dashboard runs per output directory: a second `--web` (or a second
+click on the desktop icon) exits with a message pointing at the one already
+running, instead of two engines fighting over the same page.
+
 ### Connection reuse
 
 `--web` reuses one SSH connection per host (`ControlMaster`) instead of logging

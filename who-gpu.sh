@@ -909,6 +909,11 @@ write_shell_html() {
 <style>
   * { box-sizing: border-box; }
   body {
+    /* Everything below is sized in px; zoom scales the lot. 1.1 reads as a
+       browser zoom of 110%, which people found easier on the eyes. It is a
+       variable so the GPU bars can undo it (see .gpubar .track). */
+    --zoom: 1.1;
+    zoom: var(--zoom);
     margin: 0; background: #444444; color: #f0f0f0;
     font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto,
                  "Helvetica Neue", Arial, sans-serif;
@@ -1000,21 +1005,36 @@ write_shell_html() {
   }
   .stat p { margin: 1px 0 0; font-size: 13px; color: #f0f0f0; word-break: break-word; }
 
-  /* Two tracks per GPU: utilization on top in the busy colours, memory used
-     underneath, thinner and in a neutral blue so a full card at 0% util does
-     not read as busy. The labels stack the same way on the right. */
+  /* One track per GPU, split in two: utilization in the busy colours on
+     the top half, memory used in a neutral grey on the bottom half. Each
+     fill is a full-height pill clipped at the midline, so the rounded ends
+     keep the track's profile instead of shrinking to a thin bar. They never
+     overlap, so nothing blends, and a full card at 0% util still reads as
+     occupied. The labels stack the same way on the right. */
   .gpubars { padding: 2px 16px 12px; }
-  .gpubar { display: flex; align-items: center; gap: 8px; margin-top: 7px; font-size: 11px; color: #b5b5b5; }
-  .gpubar .idx { flex: 0 0 34px; }
-  .gpubar .tracks { flex: 1; display: flex; flex-direction: column; gap: 2px; }
-  .gpubar .track { height: 6px; background: #3a3a3a; border-radius: 3px; overflow: hidden; }
-  .gpubar .track.mem { height: 4px; }
-  .gpubar .fill { height: 100%; background: #6fcf6f; border-radius: 3px; }
+  .gpubar { display: flex; align-items: center; gap: 8px; margin-top: 7px; font-size: 12px; color: #b5b5b5; }
+  .gpubar .idx { flex: 0 0 38px; }
+  /* Bar heights are divided by the page zoom so they come out as whole
+     device pixels after zooming; otherwise edges land on fractions and look
+     thicker on one side than the other at some window sizes. */
+  .gpubar .track { flex: 1; position: relative; height: calc(12px / var(--zoom)); background: #3a3a3a; border-radius: calc(6px / var(--zoom)); overflow: hidden; }
+  /* The halves clip with overflow rather than clip-path: overflow clips are
+     pixel-snapped, clip-path is not, and an unsnapped midline anti-aliases
+     into a blurry row whenever the track sits at a fractional offset. */
+  .gpubar .half { position: absolute; left: 0; right: 0; height: 50%; overflow: hidden; }
+  .gpubar .half.top    { top: 0; }
+  .gpubar .half.bottom { bottom: 0; }
+  .gpubar .fill { position: absolute; left: 0; top: 0; height: calc(12px / var(--zoom)); background: #6fcf6f; border-radius: calc(6px / var(--zoom)); }
   .gpubar .fill.mid  { background: #f0c24b; }
   .gpubar .fill.high { background: #e5735f; }
-  .gpubar .fill.mem  { background: #7fb3e6; }
-  .gpubar .pct { flex: 0 0 68px; text-align: right; line-height: 1.2; }
-  .gpubar .pct .memlbl { display: block; font-size: 10px; color: #9db8d4; }
+  .gpubar .fill.mem  { top: auto; bottom: 0; background: #7a7a7a; }
+  /* The util label takes a muted version of its line's colour; the memory
+     label stays grey like its fill. */
+  .gpubar .pct { flex: 0 0 76px; text-align: right; line-height: 1.2; }
+  .gpubar .pct.low  { color: #8fc98f; }
+  .gpubar .pct.mid  { color: #d9b86a; }
+  .gpubar .pct.high { color: #d98a80; }
+  .gpubar .pct .memlbl { display: block; font-size: 11px; color: #a8a8a8; }
 
   /* Detail pane: a tab strip, then one <pre> per tab. It slides open by
      animating a grid row from 0fr to 1fr, which needs no height measurement;
@@ -1466,22 +1486,17 @@ write_shell_html() {
                   + " · " + (g.util < 0 ? "util unknown" : g.util + "% util")
                   + " · " + (mem ? mem + " memory" : "memory unknown");
         row.appendChild(el("span", "idx", "GPU" + g.index));
-        var tracks = el("div", "tracks");
         var track = el("div", "track");
-        var fill = el("div", "fill");
         var u = g.util < 0 ? 0 : g.util;
+        var ucls = u >= 70 ? " high" : u >= 25 ? " mid" : "";
+        var top = el("div", "half top"), fill = el("div", "fill" + ucls);
         fill.style.width = u + "%";
-        if (u >= 70) fill.className = "fill high";
-        else if (u >= 25) fill.className = "fill mid";
-        track.appendChild(fill);
-        tracks.appendChild(track);
-        var mtrack = el("div", "track mem");
-        var mfill = el("div", "fill mem");
+        top.appendChild(fill); track.appendChild(top);
+        var bottom = el("div", "half bottom"), mfill = el("div", "fill mem");
         mfill.style.width = (mem ? Math.round(100 * g.mem_used / g.mem_total) : 0) + "%";
-        mtrack.appendChild(mfill);
-        tracks.appendChild(mtrack);
-        row.appendChild(tracks);
-        var pct = el("span", "pct", g.util < 0 ? "—" : g.util + "%");
+        bottom.appendChild(mfill); track.appendChild(bottom);
+        row.appendChild(track);
+        var pct = el("span", "pct" + (g.util < 0 ? "" : ucls || " low"), g.util < 0 ? "—" : g.util + "%");
         pct.appendChild(el("span", "memlbl", mem || "—"));
         row.appendChild(pct);
         r.bars.appendChild(row);

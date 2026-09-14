@@ -128,6 +128,8 @@ set_config_key() {
 # backoff below must respect.
 resolve_interval() {
   if [[ -n "${WHO_GPU_INTERVAL:-}" ]]; then
+    [[ "$WHO_GPU_INTERVAL" =~ ^[0-9]+$ ]] || {
+      echo "who-gpu: WHO_GPU_INTERVAL must be a whole number of seconds, got '$WHO_GPU_INTERVAL'" >&2; exit 1; }
     WEB_INTERVAL="$WHO_GPU_INTERVAL"; INTERVAL_PINNED=1
   elif [[ -n "$CFG_INTERVAL" ]]; then
     WEB_INTERVAL="$CFG_INTERVAL";     INTERVAL_PINNED=1
@@ -162,16 +164,31 @@ usage() { awk 'NR == 1 { next } /^#/ { print; next } { exit }' "$0"; exit "${1:-
 
 hosts=()                # the machines to probe; parse_args and collect_hosts fill it
 
+# A flag that takes a value, or a number: a missing or malformed one gets a
+# plain message here rather than a shell error further down. Both are handed
+# the rest of the command line so they can see whether a value exists at all.
+need_value() {    # need_value FLAG [VALUE...]
+  [[ -n "${2:-}" ]] && return 0
+  echo "who-gpu: $1 needs a value" >&2; usage 1
+}
+need_number() {   # need_number UNIT FLAG [VALUE...]
+  local unit="$1" flag="$2" val="${3:-}"
+  [[ "$val" =~ ^[0-9]+$ ]] && return 0
+  if [[ -z "$val" ]]; then echo "who-gpu: $flag needs a number of $unit" >&2
+  else echo "who-gpu: $flag needs a whole number of $unit, got '$val'" >&2; fi
+  usage 1
+}
+
 # Command line -> the flags above and the `hosts` array.
 parse_args() {
   local _modes
   while [[ $# -gt 0 ]]; do
     case "$1" in
-      -f|--file)    HOSTS_FILE="$2"; shift 2 ;;
-      -u|--user)    SSH_USER="$2"; shift 2 ;;
-      -t|--timeout) CONNECT_TIMEOUT="$2"; shift 2 ;;
-      -n|--top)     TOP_N="$2"; shift 2 ;;
-      -p|--parallel) PARALLEL="$2"; shift 2 ;;
+      -f|--file)    need_value "$@"; HOSTS_FILE="$2"; shift 2 ;;
+      -u|--user)    need_value "$@"; SSH_USER="$2"; shift 2 ;;
+      -t|--timeout) need_number seconds "$@"; CONNECT_TIMEOUT="$2"; shift 2 ;;
+      -n|--top)     need_number processes "$@"; TOP_N="$2"; shift 2 ;;
+      -p|--parallel) need_number hosts "$@"; PARALLEL="$2"; shift 2 ;;
       -s|--summary) SUMMARY=1; MODE_FLAGS="$MODE_FLAGS --summary"; shift ;;
       -F|--full)    SUMMARY=0; MODE_FLAGS="$MODE_FLAGS --full"; shift ;;
       --web)        DO_WEB=1;  MODE_FLAGS="$MODE_FLAGS --web";  shift ;;

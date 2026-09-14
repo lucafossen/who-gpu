@@ -103,7 +103,6 @@ load_config() {
     esac
   done < <(grep -E '^[A-Z_]+=' "$CONFIG_FILE" 2>/dev/null)
 }
-load_config
 
 # Set one KEY=value in the config file, keeping everything else in it as is.
 # The file is normally written by install.sh; this exists so --setup can change
@@ -125,11 +124,13 @@ set_config_key() {
 # Precedence: environment, then config, then the built-in default. Either of the
 # first two counts as the user having picked a number, which the automatic
 # backoff below must respect.
-if [[ -n "${WHO_GPU_INTERVAL:-}" ]]; then
-  WEB_INTERVAL="$WHO_GPU_INTERVAL"; INTERVAL_PINNED=1
-elif [[ -n "$CFG_INTERVAL" ]]; then
-  WEB_INTERVAL="$CFG_INTERVAL";     INTERVAL_PINNED=1
-fi
+resolve_interval() {
+  if [[ -n "${WHO_GPU_INTERVAL:-}" ]]; then
+    WEB_INTERVAL="$WHO_GPU_INTERVAL"; INTERVAL_PINNED=1
+  elif [[ -n "$CFG_INTERVAL" ]]; then
+    WEB_INTERVAL="$CFG_INTERVAL";     INTERVAL_PINNED=1
+  fi
+}
 
 # Without connection reuse every cycle is a fresh login on every host, so a
 # 10s default becomes hostile to the fleet. Back off to something gentle --
@@ -141,40 +142,58 @@ relax_interval_without_mux() {
   return 0
 }
 
+# What to say when connections cannot be reused. Told only once that is known,
+# since it decides the refresh rate: saying "every 10s" and then changing it
+# would be a lie.
+no_reuse_note() {
+  echo "who-gpu: this ssh will not reuse connections, so every refresh is a" >&2
+  echo "         fresh login on each host." >&2
+  if relax_interval_without_mux; then
+    echo "         Slowing the refresh rate to go easy on the fleet." >&2
+    echo "         Override with WHO_GPU_INTERVAL if you want it faster." >&2
+  fi
+}
+
 usage() { sed -n '2,38p' "$0"; exit "${1:-0}"; }
 
-hosts=()
-while [[ $# -gt 0 ]]; do
-  case "$1" in
-    -f|--file)    HOSTS_FILE="$2"; shift 2 ;;
-    -u|--user)    SSH_USER="$2"; shift 2 ;;
-    -t|--timeout) CONNECT_TIMEOUT="$2"; shift 2 ;;
-    -n|--top)     TOP_N="$2"; shift 2 ;;
-    -p|--parallel) PARALLEL="$2"; shift 2 ;;
-    -s|--summary) SUMMARY=1; MODE_FLAGS="$MODE_FLAGS --summary"; shift ;;
-    -F|--full)    SUMMARY=0; MODE_FLAGS="$MODE_FLAGS --full"; shift ;;
-    --web)        DO_WEB=1;  MODE_FLAGS="$MODE_FLAGS --web";  shift ;;
-    --json)       DO_JSON=1; MODE_FLAGS="$MODE_FLAGS --json"; shift ;;
-    -S|--ssh-config) USE_SSH_CONFIG=1; shift ;;
-    --no-ssh-config) USE_SSH_CONFIG=0; shift ;;
-    --setup|--wizard) DO_SETUP=1; shift ;;
-    --update)     DO_UPDATE=1; shift ;;
-    --version|-V) DO_VERSION=1; shift ;;
-    -h|--help)    usage 0 ;;
-    -*)           echo "unknown option: $1" >&2; usage 1 ;;
-    *)            hosts+=("$1"); shift ;;
-  esac
-done
+hosts=()                # the machines to probe; parse_args and collect_hosts fill it
 
-# --summary/--full/--web/--json all answer "what do I emit?", so combining them
-# is a user error rather than something to silently resolve.
-read -r -a _modes <<< "$MODE_FLAGS"
-if [[ ${#_modes[@]} -gt 1 ]]; then
-  echo "who-gpu: pick one output mode, got:${MODE_FLAGS}" >&2
-  exit 1
-fi
-# No mode flag at all: the config decides. Any explicit flag still wins.
-[[ -z "$MODE_FLAGS" && "$CFG_DEFAULT_MODE" == "web" ]] && DO_WEB=1
+# Command line -> the flags above and the `hosts` array.
+parse_args() {
+  local _modes
+  while [[ $# -gt 0 ]]; do
+    case "$1" in
+      -f|--file)    HOSTS_FILE="$2"; shift 2 ;;
+      -u|--user)    SSH_USER="$2"; shift 2 ;;
+      -t|--timeout) CONNECT_TIMEOUT="$2"; shift 2 ;;
+      -n|--top)     TOP_N="$2"; shift 2 ;;
+      -p|--parallel) PARALLEL="$2"; shift 2 ;;
+      -s|--summary) SUMMARY=1; MODE_FLAGS="$MODE_FLAGS --summary"; shift ;;
+      -F|--full)    SUMMARY=0; MODE_FLAGS="$MODE_FLAGS --full"; shift ;;
+      --web)        DO_WEB=1;  MODE_FLAGS="$MODE_FLAGS --web";  shift ;;
+      --json)       DO_JSON=1; MODE_FLAGS="$MODE_FLAGS --json"; shift ;;
+      -S|--ssh-config) USE_SSH_CONFIG=1; shift ;;
+      --no-ssh-config) USE_SSH_CONFIG=0; shift ;;
+      --setup|--wizard) DO_SETUP=1; shift ;;
+      --update)     DO_UPDATE=1; shift ;;
+      --version|-V) DO_VERSION=1; shift ;;
+      -h|--help)    usage 0 ;;
+      -*)           echo "unknown option: $1" >&2; usage 1 ;;
+      *)            hosts+=("$1"); shift ;;
+    esac
+  done
+
+  # --summary/--full/--web/--json all answer "what do I emit?", so combining them
+  # is a user error rather than something to silently resolve.
+  read -r -a _modes <<< "$MODE_FLAGS"
+  if [[ ${#_modes[@]} -gt 1 ]]; then
+    echo "who-gpu: pick one output mode, got:${MODE_FLAGS}" >&2
+    exit 1
+  fi
+  # No mode flag at all: the config decides. Any explicit flag still wins.
+  [[ -z "$MODE_FLAGS" && "$CFG_DEFAULT_MODE" == "web" ]] && DO_WEB=1
+  return 0
+}
 
 # Interactive setup: scans ~/.ssh/config, shows every Host entry with its current
 # probe state, and lets you toggle each one on or off. Works for first-time setup
@@ -489,9 +508,6 @@ run_update() {
   return 0
 }
 
-if [[ "$DO_VERSION" == "1" ]]; then echo "who-gpu $(version_string)"; exit 0; fi
-if [[ "$DO_UPDATE"  == "1" ]]; then run_update; exit $?; fi
-
 # Extract host aliases tagged for probing from an ssh_config file.
 # A host is included when its block contains a comment line "#probe"
 # (also matches "# probe" or "# probe: some note"). The first non-wildcard
@@ -511,31 +527,30 @@ hosts_from_ssh_config() {
   ' "$1"
 }
 
-# --setup: run the interactive wizard and exit.
-if [[ "$DO_SETUP" == "1" ]]; then
-  run_setup_wizard; exit $?
-fi
+# Decide which hosts to probe. Precedence: hosts on the command line, then -f,
+# then ~/.ssh/config #probe markers, then the ~/.who-gpu-hosts fallback.
+# Fills the global `hosts` array, or exits with an explanation.
+collect_hosts() {
+  # Pull hosts from ~/.ssh/config markers (unless hosts were given explicitly).
+  if [[ "$USE_SSH_CONFIG" == "1" && ${#hosts[@]} -eq 0 && -z "$HOSTS_FILE" ]]; then
+    [[ -r "$SSH_CONFIG_FILE" ]] || { echo "cannot read ssh config: $SSH_CONFIG_FILE" >&2; exit 1; }
+    while IFS= read -r h; do hosts+=("$h"); done < <(hosts_from_ssh_config "$SSH_CONFIG_FILE")
 
-# Pull hosts from ~/.ssh/config markers (unless hosts were given explicitly).
-if [[ "$USE_SSH_CONFIG" == "1" && ${#hosts[@]} -eq 0 && -z "$HOSTS_FILE" ]]; then
-  [[ -r "$SSH_CONFIG_FILE" ]] || { echo "cannot read ssh config: $SSH_CONFIG_FILE" >&2; exit 1; }
-  while IFS= read -r h; do hosts+=("$h"); done < <(hosts_from_ssh_config "$SSH_CONFIG_FILE")
-
-  if [[ ${#hosts[@]} -eq 0 ]]; then
-    echo "who-gpu: no #probe markers found in $SSH_CONFIG_FILE" >&2
-    # If we're on a terminal, offer the guided setup right now.
-    if [[ -t 0 && -t 1 ]]; then
-      printf 'Scan your SSH config and choose hosts to probe now? [Y/n] ' >&2
-      IFS= read -r ans </dev/tty || ans=""
-      if [[ -z "$ans" || "$ans" =~ ^[Yy] ]]; then
-        echo >&2
-        run_setup_wizard || exit 1
-        while IFS= read -r h; do hosts+=("$h"); done < <(hosts_from_ssh_config "$SSH_CONFIG_FILE")
-      fi
-    fi
-    # Still nothing (declined, cancelled, or non-interactive)? Explain and stop.
     if [[ ${#hosts[@]} -eq 0 ]]; then
-      cat >&2 <<EOF
+      echo "who-gpu: no #probe markers found in $SSH_CONFIG_FILE" >&2
+      # If we're on a terminal, offer the guided setup right now.
+      if [[ -t 0 && -t 1 ]]; then
+        printf 'Scan your SSH config and choose hosts to probe now? [Y/n] ' >&2
+        IFS= read -r ans </dev/tty || ans=""
+        if [[ -z "$ans" || "$ans" =~ ^[Yy] ]]; then
+          echo >&2
+          run_setup_wizard || exit 1
+          while IFS= read -r h; do hosts+=("$h"); done < <(hosts_from_ssh_config "$SSH_CONFIG_FILE")
+        fi
+      fi
+      # Still nothing (declined, cancelled, or non-interactive)? Explain and stop.
+      if [[ ${#hosts[@]} -eq 0 ]]; then
+        cat >&2 <<EOF
 
 To set this up manually, add a "#probe" comment line inside each Host block you
 want probed (SSH ignores comment lines, so ssh itself is unaffected):
@@ -552,28 +567,29 @@ Other ways to pass hosts without editing your SSH config:
     who-gpu -f hosts.txt        # a file with one host per line
     who-gpu --no-ssh-config     # use the ~/.who-gpu-hosts fallback file
 EOF
-      exit 1
+        exit 1
+      fi
     fi
   fi
-fi
 
-# No hosts on the command line and no -f? Fall back to the default hosts file.
-if [[ ${#hosts[@]} -eq 0 && -z "$HOSTS_FILE" && -r "$DEFAULT_HOSTS_FILE" ]]; then
-  HOSTS_FILE="$DEFAULT_HOSTS_FILE"
-fi
+  # No hosts on the command line and no -f? Fall back to the default hosts file.
+  if [[ ${#hosts[@]} -eq 0 && -z "$HOSTS_FILE" && -r "$DEFAULT_HOSTS_FILE" ]]; then
+    HOSTS_FILE="$DEFAULT_HOSTS_FILE"
+  fi
 
-if [[ -n "$HOSTS_FILE" ]]; then
-  [[ -r "$HOSTS_FILE" ]] || { echo "cannot read hosts file: $HOSTS_FILE" >&2; exit 1; }
-  while IFS= read -r line; do
-    line="${line%%#*}"; line="$(echo "$line" | xargs)"   # strip comments + trim
-    [[ -n "$line" ]] && hosts+=("$line")
-  done < "$HOSTS_FILE"
-fi
+  if [[ -n "$HOSTS_FILE" ]]; then
+    [[ -r "$HOSTS_FILE" ]] || { echo "cannot read hosts file: $HOSTS_FILE" >&2; exit 1; }
+    while IFS= read -r line; do
+      line="${line%%#*}"; line="$(echo "$line" | xargs)"   # strip comments + trim
+      [[ -n "$line" ]] && hosts+=("$line")
+    done < "$HOSTS_FILE"
+  fi
 
-[[ ${#hosts[@]} -gt 0 ]] || {
-  echo "no hosts given, and no default hosts file at $DEFAULT_HOSTS_FILE" >&2
-  echo "create it (one host per line) or pass hosts / -f <file>." >&2
-  usage 1
+  [[ ${#hosts[@]} -gt 0 ]] || {
+    echo "no hosts given, and no default hosts file at $DEFAULT_HOSTS_FILE" >&2
+    echo "create it (one host per line) or pass hosts / -f <file>." >&2
+    usage 1
+  }
 }
 
 # ---- remote snippet -------------------------------------------------------
@@ -910,6 +926,14 @@ collect_fleet_json() {
   emit_fleet_json
 }
 
+# Per-host results land here as files; --json and --web both need it.
+# BSD mktemp (macOS) requires a template, GNU does not -- give one either way.
+make_web_tmp() {
+  WEB_TMP=$(mktemp -d 2>/dev/null || mktemp -d -t who-gpu) || {
+    echo "who-gpu: cannot create a temp directory" >&2; exit 1; }
+  export WEB_TMP
+}
+
 export -f probe ssh_probe_raw ssh_probe_once probe_json_one json_str json_words_array
 export SSH_USER CONNECT_TIMEOUT TOP_N REMOTE SUMMARY SSH_MUX_DIR SSH_MUX_PERSIST
 
@@ -1189,23 +1213,11 @@ run_web() {
   fi
   mkdir -p "$WEB_OUT" || { echo "who-gpu: cannot create $WEB_OUT" >&2; exit 1; }
   claim_web_pidfile
-  WEB_TMP=$(mktemp -d 2>/dev/null || mktemp -d -t who-gpu) || {
-    echo "who-gpu: cannot create a temp directory" >&2; exit 1; }
-  export WEB_TMP
+  make_web_tmp
   trap 'stop_publisher; close_ssh_mux; rm -rf "$WEB_TMP"; printf "\nwho-gpu: stopped. Dashboard left at %s\n" "$(web_url)"; exit 0' INT TERM HUP
 
   write_shell_html
 
-  # Announced only after we know whether reuse worked, since that decides the
-  # refresh rate. Saying "every 10s" and then changing it would be a lie.
-  no_reuse_note() {
-    echo "who-gpu: this ssh will not reuse connections, so every refresh is a" >&2
-    echo "         fresh login on each host." >&2
-    if relax_interval_without_mux; then
-      echo "         Slowing the refresh rate to go easy on the fleet." >&2
-      echo "         Override with WHO_GPU_INTERVAL if you want it faster." >&2
-    fi
-  }
   setup_ssh_mux || no_reuse_note
 
   # Open the page before probing anything: every host starts out as "probing"
@@ -1247,26 +1259,47 @@ run_web() {
   done
 }
 
-if [[ "$DO_WEB" == "1" || "$DO_JSON" == "1" ]]; then
-  WEB_TMP=$(mktemp -d 2>/dev/null || mktemp -d -t who-gpu) || {
-    echo "who-gpu: cannot create a temp directory" >&2; exit 1; }
-  export WEB_TMP
-  if [[ "$DO_JSON" == "1" ]]; then
-    trap 'rm -rf "$WEB_TMP"' EXIT
-    collect_fleet_json
-    exit 0
+# --json: probe everything, emit once, exit.
+run_json() {
+  make_web_tmp
+  trap 'rm -rf "$WEB_TMP"' EXIT
+  collect_fleet_json
+}
+
+# The default: one line or one block per host, printed as each answers.
+run_terminal() {
+  echo "Probing ${#hosts[@]} host(s) with up to $PARALLEL in parallel..."
+  echo
+
+  # Run in parallel but keep each host's block contiguous; sort by host order.
+  printf '%s\n' "${hosts[@]}" \
+    | xargs -P "$PARALLEL" -I{} bash -c 'probe "$@"' _ {}
+
+  # After the report, never before it: the check can cost a second and the numbers
+  # are what the user came for.
+  notify_update
+}
+
+# ---- main -----------------------------------------------------------------
+# Everything that runs is in here, in the order it runs. Bash reads a script
+# lazily from disk as it executes, so a `who-gpu --update` that replaced this
+# file mid-run could otherwise feed a half-read script garbage; a function is
+# parsed whole before any of it runs, which closes that hole.
+main() {
+  load_config
+  resolve_interval
+  parse_args "$@"
+
+  if [[ "$DO_VERSION" == "1" ]]; then echo "who-gpu $(version_string)"; exit 0; fi
+  if [[ "$DO_UPDATE"  == "1" ]]; then run_update; exit $?; fi
+  if [[ "$DO_SETUP"   == "1" ]]; then run_setup_wizard; exit $?; fi
+
+  collect_hosts
+
+  if   [[ "$DO_JSON" == "1" ]]; then run_json
+  elif [[ "$DO_WEB"  == "1" ]]; then run_web
+  else                               run_terminal
   fi
-  rm -rf "$WEB_TMP"
-  run_web
-fi
+}
 
-echo "Probing ${#hosts[@]} host(s) with up to $PARALLEL in parallel..."
-echo
-
-# Run in parallel but keep each host's block contiguous; sort by host order.
-printf '%s\n' "${hosts[@]}" \
-  | xargs -P "$PARALLEL" -I{} bash -c 'probe "$@"' _ {}
-
-# After the report, never before it: the check can cost a second and the numbers
-# are what the user came for.
-notify_update
+main "$@"

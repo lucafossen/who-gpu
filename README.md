@@ -8,7 +8,7 @@ use and by which users**.
 
 Also includes a dependency-free web GUI.
 
-<img width="3558" height="2672" alt="image" src="https://github.com/user-attachments/assets/128f2e78-e47e-4ba0-8260-29f67a61756c" />
+<img width="3692" height="2156" alt="image" src="https://github.com/user-attachments/assets/14450af2-c77a-4c5f-a355-26d96d4846f2" />
 
 ## Why
 

@@ -639,6 +639,16 @@ if command -v nvidia-smi >/dev/null 2>&1; then
 else
   HAVE_SMI=0; GPUS=""; APPS=""
 fi
+# Owner of each process, resolved once through ps: "uuid pid user" per line.
+# Every section that names a user reads from this. A pid nvidia-smi still
+# lists but ps no longer sees (just exited, or hidden by pid namespaces)
+# gets "?".
+OWNERS=$(printf '%s\n' "$APPS" \
+  | awk -F', *' 'NF>=2 {print $1, $2}' \
+  | while read -r u p; do
+      o=$(ps -o user= -p "$p" 2>/dev/null | xargs)
+      echo "$u $p ${o:-?}"
+    done)
 # Unified-memory parts (GB10, Jetson) have no memory of their own and report
 # [N/A]; what they draw on is system RAM, so report that instead: used is
 # what `free` calls used. A 7th field marks the line so the local side can
@@ -656,15 +666,19 @@ if [ "$HAVE_SMI" = 1 ]; then
   | awk -F', *' 'NF>=5 {printf "  GPU%s %s | util %s%% | mem %s/%s MiB%s\n",$1,$2,$3,$4,$5,($7=="unified"?" (unified)":"")}'
 
   echo "=== gpu processes ==="
-  # pid, used mem, process name -> resolve owner via ps
+  # One line per process, joined to its card through the uuid shared by the
+  # two captures, and sorted by card so it reads as "who holds what".
   printf '%s\n' "$APPS" \
-  | while IFS=',' read -r _uuid pid mem pname; do
-      pid=$(echo "$pid" | xargs); mem=$(echo "$mem" | xargs); pname=$(echo "$pname" | xargs)
+  | while IFS=',' read -r uuid pid mem pname; do
+      uuid=$(echo "$uuid" | xargs); pid=$(echo "$pid" | xargs)
+      mem=$(echo "$mem" | xargs); pname=$(echo "$pname" | xargs)
       [ -z "$pid" ] && continue
-      user=$(ps -o user= -p "$pid" 2>/dev/null | xargs)
+      gpu=$(printf '%s\n' "$GPUS" | awk -F', *' -v u="$uuid" '$6==u {print $1; exit}')
+      user=$(printf '%s\n' "$OWNERS" | awk -v p="$pid" '$2==p {print $3; exit}')
       [ -z "$user" ] && user="?"
-      printf "  %-12s pid %-7s %6s MiB  %s\n" "$user" "$pid" "$mem" "$pname"
-    done
+      printf "%s\t  GPU %s | User: %s | PID: %s | Memory: %s MiB | Process: %s\n" \
+        "${gpu:-999999}" "${gpu:-?}" "$user" "$pid" "$mem" "$pname"
+    done | sort -n -k1,1 -s | cut -f2-
   [ -z "$APPS" ] && echo "  (no active GPU processes)"
 else
   echo "  (nvidia-smi not found)"
@@ -675,9 +689,13 @@ ps -eo user,pid,pcpu,pmem,comm --sort=-pcpu 2>/dev/null \
   | awk 'NR==1 || $3+0>0.5' | head -n "$((TOP_N+1))" | sed 's/^/  /'
 
 # Machine-readable per-GPU lines consumed by --web / --json.
-# Format: __GPU__|index|name|util_pct|mem_used_mib|mem_total_mib|unified(0/1)
+# Format: __GPU__|index|name|util_pct|mem_used_mib|mem_total_mib|unified(0/1)|users
+# users is the space-separated set of usernames with a process on that card.
 printf '%s\n' "$GPUS" \
-| awk -F', *' 'NF>=6 {printf "__GPU__|%s|%s|%s|%s|%s|%d\n",$1,$2,$3,$4,$5,($7=="unified")}'
+| awk -F', *' -v owners="$OWNERS" '
+    BEGIN { n = split(owners, l, "\n")
+            for (i = 1; i <= n; i++) { split(l[i], f, " "); if (!seen[f[1], f[3]]++) u[f[1]] = u[f[1]] (u[f[1]] ? " " : "") f[3] } }
+    NF>=6 {printf "__GPU__|%s|%s|%s|%s|%s|%d|%s\n",$1,$2,$3,$4,$5,($7=="unified"),u[$6]}'
 
 # Plain `nvidia-smi` for the dashboard's second tab: the table people already
 # know how to read. Only emitted when asked (--web / --json), so the terminal
@@ -700,9 +718,7 @@ if [ "$HAVE_SMI" = 1 ]; then
   s_busy=$(printf '%s\n' "$GPUS" \
            | awk -F', *' -v used=" $used " 'NF>=6 && ($3+0>=5 || index(used, " " $6 " "))' \
            | wc -l | xargs)
-  s_gu=$(printf '%s\n' "$APPS" | awk -F', *' 'NF>=2 {print $2}' \
-         | while read -r p; do ps -o user= -p "$p" 2>/dev/null; done \
-         | sort -u | xargs)
+  s_gu=$(printf '%s\n' "$OWNERS" | awk 'NF>=3 && $3!="?" {print $3}' | sort -u | xargs)
 else
   s_total=0; s_busy=0; s_gu=""
 fi
@@ -865,9 +881,13 @@ probe_json_one() {
       u  = ($4 ~ /^[0-9]+$/) ? $4 + 0 : -1
       mu = ($5 ~ /^[0-9]+$/) ? $5 + 0 : -1
       mt = ($6 ~ /^[0-9]+$/) ? $6 + 0 : -1
+      users = $8
+      gsub(/[\\"<]/, "", users)        # usernames; same treatment as name
+      k = split(users, w, " "); ul = ""
+      for (i = 1; i <= k; i++) ul = ul (i > 1 ? "," : "") "\"" w[i] "\""
       if (n++) printf ","
-      printf "{\"index\":%d,\"name\":\"%s\",\"util\":%d,\"mem_used\":%d,\"mem_total\":%d,\"unified\":%s}", \
-             $2 + 0, name, u, mu, mt, ($7 == "1") ? "true" : "false"
+      printf "{\"index\":%d,\"name\":\"%s\",\"util\":%d,\"mem_used\":%d,\"mem_total\":%d,\"unified\":%s,\"users\":[%s]}", \
+             $2 + 0, name, u, mu, mt, ($7 == "1") ? "true" : "false", ul
     }')
 
   # The fenced nvidia-smi table is its own field; everything else stays the

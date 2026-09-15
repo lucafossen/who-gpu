@@ -111,7 +111,11 @@
      occupied. The labels stack the same way on the right. */
   .gpubars { padding: 2px 16px 12px; }
   .gpubar { display: flex; align-items: center; gap: 8px; margin-top: 7px; font-size: 12px; color: #b5b5b5; }
-  .gpubar .idx { flex: 0 0 38px; }
+  /* The label column stacks the card index over whoever has a process on
+     it. Fixed width keeps the tracks aligned across rows; a long name or
+     several names get an ellipsis and the full list lives in the tooltip. */
+  .gpubar .idx { flex: 0 0 64px; line-height: 1.2; overflow: hidden; }
+  .gpubar .idx .who { display: block; font-size: 11px; color: #e6e6e6; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
   /* Bar heights are divided by the page zoom so they come out as whole
      device pixels after zooming; otherwise edges land on fractions and look
      thicker on one side than the other at some window sizes. */
@@ -590,17 +594,20 @@
     if (!h.reachable && h.error) setText(r.stats["Status"], h.error);
 
     // GPU bars: rebuilt only when the shape or the numbers actually changed.
-    var sig = h.gpus.map(function (g) { return g.index + ":" + g.util + ":" + g.mem_used; }).join(",");
+    var sig = h.gpus.map(function (g) { return g.index + ":" + g.util + ":" + g.mem_used + ":" + (g.users || []).join(" "); }).join(",");
     if (r.bars.dataset.sig !== sig) {
       r.bars.dataset.sig = sig;
       r.bars.textContent = "";
       h.gpus.forEach(function (g) {
-        var mem = memLabel(g);
+        var mem = memLabel(g), who = (g.users || []).join(", ");
         var row = el("div", "gpubar");
         row.title = "GPU" + g.index + (g.name ? " " + g.name : "")
                   + " · " + (g.util < 0 ? "util unknown" : g.util + "% util")
-                  + " · " + (mem ? mem + (g.unified ? " unified memory" : " memory") : "memory unknown");
-        row.appendChild(el("span", "idx", "GPU" + g.index));
+                  + " · " + (mem ? mem + (g.unified ? " unified memory" : " memory") : "memory unknown")
+                  + (who ? " · " + who : "");
+        var idx = el("span", "idx", "GPU" + g.index);
+        if (who) idx.appendChild(el("span", "who", who));
+        row.appendChild(idx);
         var track = el("div", "track");
         var u = g.util < 0 ? 0 : g.util;
         var ucls = u >= 70 ? " high" : u >= 25 ? " mid" : "";

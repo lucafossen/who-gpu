@@ -726,7 +726,9 @@ if [ "$HAVE_SMI" = 1 ]; then
   s_busy=$(printf '%s\n' "$GPUS" \
            | awk -F', *' -v used=" $used " 'NF>=6 && ($3+0>=5 || index(used, " " $6 " "))' \
            | wc -l | xargs)
-  s_gu=$(printf '%s\n' "$OWNERS" | awk 'NF>=3 && $3!="?" {print $3}' | sort -u | xargs)
+  # "?" stays in: a process ps cannot see (pid namespaces, or it just exited)
+  # still holds the card, and the per-GPU lists say so too.
+  s_gu=$(printf '%s\n' "$OWNERS" | awk 'NF>=3 {print $3}' | sort -u | xargs)
 else
   s_total=0; s_busy=0; s_gu=""
 fi

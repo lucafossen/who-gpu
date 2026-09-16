@@ -625,7 +625,9 @@ echo "=== uptime ==="
 uptime 2>/dev/null | sed 's/^ *//'
 
 echo "=== logged-in users ==="
-who 2>/dev/null | awk '{print $1}' | sort -u | paste -sd' ' - || echo "(none)"
+# Tested on the output, not the exit status: an empty pipeline still succeeds.
+li=$(who 2>/dev/null | awk '{print $1}' | sort -u | paste -sd' ' -)
+echo "${li:-(none)}"
 
 # nvidia-smi loads the driver library on every invocation, and on a loaded
 # box that is where a probe spends its time, so it runs exactly twice: once

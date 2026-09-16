@@ -339,8 +339,11 @@ setup_probe_hosts() {
   tagf=$(mktemp 2>/dev/null   || mktemp -t who-gpu)
   untagf=$(mktemp 2>/dev/null || mktemp -t who-gpu)
   tmpout=$(mktemp 2>/dev/null || mktemp -t who-gpu)
-  printf '%s\n' "${to_tag[@]}"   > "$tagf"
-  printf '%s\n' "${to_untag[@]}" > "$untagf"
+  # One of these is usually empty (only switching hosts on, or only off), and
+  # bash before 4.4 treats "${empty[@]}" as unbound under set -u; the ${x+...}
+  # form expands to nothing instead, so macOS's bash 3.2 gets past this line.
+  printf '%s\n' ${to_tag[@]+"${to_tag[@]}"}     > "$tagf"
+  printf '%s\n' ${to_untag[@]+"${to_untag[@]}"} > "$untagf"
   awk -v tagfile="$tagf" -v untagfile="$untagf" '
     BEGIN {
       while ((getline x < tagfile)   > 0) if (x != "") tag[x]=1

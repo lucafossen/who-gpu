@@ -100,9 +100,10 @@ running, instead of two engines fighting over the same page.
 ### Connection reuse
 
 `--web` reuses one SSH connection per host (`ControlMaster`) instead of logging
-in on every refresh. Where that isn't supported (**notably Git Bash**) it falls
-back to a full login per refresh and slows the refresh to 60s, unless you pinned an
-interval (`WHO_GPU_INTERVAL`, `--interval`, or `INTERVAL=` in your config).
+in on every refresh. Where that isn't supported (**notably Git Bash**) every
+refresh is a full login, so who-gpu refreshes less often (default every 60s) to go easy on the
+hosts. You can also manually set an interval (e.g. `WHO_GPU_INTERVAL=30` as an environment variable,
+or `INTERVAL=30` in `~/.config/who-gpu/config`).
 
 ## Managing which hosts to probe
 
@@ -118,7 +119,7 @@ To track this, who-gpu will add `#probe` comments to tag your ssh config file en
 
 You can of course also edit this manually.
    
-I you don't want to use a config file, you can use:
+If you don't want to use a config file, you can use:
 
 * **The command line** (you can use bash brace-expansion):
    ```bash

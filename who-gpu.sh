@@ -456,10 +456,13 @@ update_available() {
   # Newest tag; its "^{}" line (if any) is the commit an annotated tag points at.
   tag=$(printf '%s\n' "$refs" | awk '$2 ~ /^refs\/tags\// && $2 !~ /\^\{\}$/ {sub(/^refs\/tags\//, "", $2); print $2; exit}')
   tag_rev=$(printf '%s\n' "$refs" | awk -v t="refs/tags/$tag" '$2 == t "^{}" {p=$1} $2 == t {r=$1} END {print (p ? p : r)}')
+  # A new release links to its notes; plain commits link to a compare view of
+  # exactly what --update would pull in. (Both refs must be on GitHub, so a
+  # clone with unpushed local commits gets a 404 from the compare link.)
   if [ -n "$tag" ] && ! git -C "$dir" merge-base --is-ancestor "$tag_rev" HEAD 2>/dev/null; then
     label="$tag"; url="$REPO_URL/releases/tag/$tag"
   else
-    label="${remote:0:7}"; url="$REPO_URL/commits/main"
+    label="${remote:0:7}"; url="$REPO_URL/compare/${local_rev:0:7}...$label"
   fi
   printf '%s %s %s %s\n' "$now" "$local_rev" "$label" "$url" > "$cache"
   printf '%s %s' "$label" "$url"

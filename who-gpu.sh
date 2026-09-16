@@ -674,7 +674,10 @@ if [ "$HAVE_SMI" = 1 ]; then
   printf '%s\n' "$APPS" \
   | while IFS=',' read -r uuid pid mem pname; do
       uuid=$(echo "$uuid" | xargs); pid=$(echo "$pid" | xargs)
-      mem=$(echo "$mem" | xargs); pname=$(echo "$pname" | xargs)
+      mem=$(echo "$mem" | xargs)
+      # Not xargs for this one: it parses quotes, and a path with an apostrophe
+      # in it ("unmatched single quote") would come out empty.
+      pname=$(printf '%s\n' "$pname" | sed 's/^[[:space:]]*//; s/[[:space:]]*$//')
       [ -z "$pid" ] && continue
       gpu=$(printf '%s\n' "$GPUS" | awk -F', *' -v u="$uuid" '$6==u {print $1; exit}')
       user=$(printf '%s\n' "$OWNERS" | awk -v p="$pid" '$2==p {print $3; exit}')

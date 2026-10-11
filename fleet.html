@@ -164,6 +164,16 @@
   /* Runs whenever a pane goes from display:none to shown, i.e. on a tab switch. */
   .detail pre { animation: fadein .2s ease; }
   @keyframes fadein { from { opacity: 0; } }
+  /* Opening or closing a pane runs as a view transition (see withMotion):
+     the transitions above are off for its duration, and each card snapshot
+     is cropped from its top-left corner rather than stretched, with the new
+     one drawn over the old, so a card that changes size reads as unfolding
+     or folding while the others slide to their new places. */
+  .vt .card-wrap, .vt .detail-wrap { transition: none; }
+  ::view-transition-old(*), ::view-transition-new(*) {
+    animation: none; mix-blend-mode: normal;
+    height: 100%; overflow: clip; object-fit: none; object-position: left top;
+  }
   @media (prefers-reduced-motion: reduce) {
     .card-wrap, .detail-wrap, .tabs button { transition: none; }
     .detail pre { animation: none; }
@@ -282,6 +292,7 @@
   var data = null;            // most recent payload
   var cards = {};             // host name -> DOM nodes, so updates patch in place
   var expanded = {};          // host name -> detail pane open?
+  var cardSeq = 0;            // numbers each card's view-transition-name
   var tabOf = {};             // host name -> "full" | "smi"
   var lastTab = "full";       // the tab picked most recently; new panes open on it
   var view = "cards";         // "cards" | "list"; remembered per browser
@@ -486,6 +497,25 @@
   function defaultDir(key) { return key === "name" || key === "model" ? "asc" : "desc"; }
 
   // --- card construction / patching ---------------------------------------
+  // A pane that opens can widen its card, and in a wrapping row that moves
+  // the cards after it. Running the change as a view transition slides every
+  // card (and section heading) from its old place to its new one, so the
+  // reshuffle can be followed. The browser takes the after-picture as soon as
+  // `change` returns, so the CSS transitions that normally animate the pane
+  // are off meanwhile (class "vt"): the layout must already be final.
+  var calm = window.matchMedia && matchMedia("(prefers-reduced-motion: reduce)");
+  Array.prototype.forEach.call(document.querySelectorAll(".sechead"), function (s, i) {
+    s.style.viewTransitionName = "head-" + i;
+  });
+  function withMotion(change) {
+    if (!document.startViewTransition || (calm && calm.matches)) return change();
+    var root = document.documentElement;
+    document.startViewTransition(function () {
+      root.classList.add("vt");
+      change();
+    }).finished.finally(function () { root.classList.remove("vt"); });
+  }
+
   function buildCard(h) {
     var wrap = el("div", "card-wrap");
     var card = el("div", "card");
@@ -524,8 +554,10 @@
       var b = el("button", null, t[1]);
       b.type = "button";
       b.addEventListener("click", function () {
-        tabOf[h.name] = lastTab = t[0];
-        showTab(refs);
+        withMotion(function () {
+          tabOf[h.name] = lastTab = t[0];
+          showTab(refs);
+        });
       });
       tabBtns[t[0]] = b;
       tabs.appendChild(b);
@@ -542,9 +574,12 @@
     wrap.addEventListener("click", function (e) {
       if (tabs.contains(e.target)) return;
       if (String(window.getSelection && window.getSelection())) return;
-      expanded[h.name] = !expanded[h.name];
-      updateCard(refs.host);    // refs.host: the latest payload, not the one this card was built from
+      withMotion(function () {
+        expanded[h.name] = !expanded[h.name];
+        updateCard(refs.host);  // refs.host: the latest payload, not the one this card was built from
+      });
     });
+    wrap.style.viewTransitionName = "card-" + (++cardSeq);
 
     var refs = { wrap: wrap, card: card, title: title, hw: hw, big: big, sup: sup,
                  sub: sub, users: users, stats: stats, bars: bars,
